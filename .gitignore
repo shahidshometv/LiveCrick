@@ -18,6 +18,10 @@ app/ios/Pods/
 app/ios/Flutter/Generated.xcconfig
 app/ios/Flutter/flutter_export_environment.sh
 
+# Node / Vercel
+node_modules/
+.vercel/
+
 # Secrets and env
 .env
 *.env
