@@ -44,6 +44,8 @@ video{width:100%;height:100%;display:block;background:#000}
 select{background:var(--stand);border:1px solid var(--line);border-radius:4px;padding:6px 8px}
 .btn{background:var(--stand);border:1px solid var(--line);border-radius:4px;padding:6px 12px;cursor:pointer}
 .btn:hover{border-color:var(--pitch)}
+.btn.pri{display:inline-block;margin-top:14px;background:var(--pitch);border-color:var(--pitch);color:#07120b;font-weight:600;text-decoration:none}
+.btn.pri[hidden]{display:none}
 
 aside h3{font-family:var(--display);font-weight:500;font-size:1.25rem;margin-bottom:10px}
 .tabs{display:flex;gap:6px;margin-bottom:12px}
@@ -75,7 +77,7 @@ ul{list-style:none;padding:0;display:flex;flex-direction:column;gap:8px}
   <section aria-label="Player">
     <div class="stage">
       <video id="video" controls playsinline preload="metadata"></video>
-      <div class="overlay show" id="overlay"><div><strong id="ovT">Pick a match</strong><p id="ovP">Choose a match from the list to start watching.</p></div></div>
+      <div class="overlay show" id="overlay"><div><strong id="ovT">Pick a match</strong><p id="ovP">Choose a match from the list to start watching.</p><a class="btn pri" id="ovA" target="_blank" rel="noopener noreferrer" hidden></a></div></div>
     </div>
     <div class="now">
       <div>
@@ -96,7 +98,7 @@ ul{list-style:none;padding:0;display:flex;flex-direction:column;gap:8px}
       <button class="tab" type="button" data-f="all" aria-pressed="true">All</button>
       <button class="tab" type="button" data-f="live" aria-pressed="false">Live</button>
       <button class="tab" type="button" data-f="upcoming" aria-pressed="false">Upcoming</button>
-      <button class="tab" type="button" data-f="replay" aria-pressed="false">Replays</button>
+      <button class="tab" type="button" data-f="finished" aria-pressed="false">Finished</button>
     </div>
     <ul id="list"></ul>
   </aside>
@@ -106,42 +108,58 @@ ul{list-style:none;padding:0;display:flex;flex-direction:column;gap:8px}
 <script>
 (function(){
   var video=document.getElementById('video'), list=document.getElementById('list');
-  var overlay=document.getElementById('overlay'), ovT=document.getElementById('ovT'), ovP=document.getElementById('ovP');
+  var overlay=document.getElementById('overlay'), ovT=document.getElementById('ovT'), ovP=document.getElementById('ovP'), ovA=document.getElementById('ovA');
   var nowT=document.getElementById('nowT'), nowS=document.getElementById('nowS');
   var quality=document.getElementById('quality');
   var state={items:[],filter:'all',current:null,hls:null};
-  var LABEL={live:'Live',upcoming:'Upcoming',replay:'Replay'};
+  var LABEL={live:'Live',upcoming:'Upcoming',finished:'Finished'};
 
-  function message(title,text){ovT.textContent=title;ovP.textContent=text;overlay.classList.add('show');}
+  function statusOf(it){
+    var s=Date.parse(it.start), e=s+(it.hours||8)*36e5, n=Date.now();
+    if(n>=e)return 'finished';
+    if(n<s)return 'upcoming';
+    return it.timeTbc?'upcoming':'live';
+  }
+  function when(it){
+    if(it.timeTbc)return it.dateLabel||'';
+    try{return new Date(it.start).toLocaleString([], {weekday:'short',day:'numeric',month:'short',hour:'numeric',minute:'2-digit'});}catch(e){return '';}
+  }
+  function message(title,text,watch){
+    ovT.textContent=title;ovP.textContent=text;
+    if(watch&&watch.url){ovA.href=watch.url;ovA.textContent='Watch on '+watch.name;ovA.hidden=false;}else{ovA.hidden=true;}
+    overlay.classList.add('show');
+  }
   function hideMessage(){overlay.classList.remove('show');}
 
-  function when(it){
-    if(it.status==='upcoming'&&it.start){
-      try{return new Date(it.start).toLocaleString([], {weekday:'short',day:'numeric',month:'short',hour:'numeric',minute:'2-digit'});}catch(e){}
-    }
-    return '';
+  function sorted(){
+    var rank={live:0,upcoming:1,finished:2};
+    return state.items.map(function(i){i._s=statusOf(i);return i;}).sort(function(a,b){
+      if(rank[a._s]!==rank[b._s])return rank[a._s]-rank[b._s];
+      var d=Date.parse(a.start)-Date.parse(b.start);
+      return a._s==='finished'?-d:d;
+    });
   }
 
   function render(){
     list.textContent='';
-    var shown=state.items.filter(function(i){return state.filter==='all'||i.status===state.filter;});
+    var shown=sorted().filter(function(i){return state.filter==='all'||i._s===state.filter;});
     if(!shown.length){
       var li=document.createElement('li');li.className='empty';
-      li.textContent='No '+(state.filter==='all'?'':LABEL[state.filter].toLowerCase()+' ')+'matches yet. Add them in streams.json.';
+      li.textContent='No '+(state.filter==='all'?'':LABEL[state.filter].toLowerCase()+' ')+'matches right now.';
       list.appendChild(li);return;
     }
     shown.forEach(function(it){
       var li=document.createElement('li');
       var b=document.createElement('button');
-      b.type='button';b.className='item';b.dataset.status=it.status;
+      b.type='button';b.className='item';b.dataset.status=it._s;
       if(state.current&&state.current.id===it.id)b.setAttribute('aria-current','true');
       var t=document.createElement('div');t.className='t';t.textContent=it.title;
       var m=document.createElement('div');m.className='m';
-      var s=document.createElement('span');s.className='badge '+it.status;s.textContent=LABEL[it.status]||it.status;
-      var se=document.createElement('span');se.textContent=it.series||'';
-      m.appendChild(s);m.appendChild(se);
-      var w=when(it);if(w){var ws=document.createElement('span');ws.textContent=w;m.appendChild(ws);}
-      b.appendChild(t);b.appendChild(m);
+      var s=document.createElement('span');s.className='badge '+it._s;s.textContent=LABEL[it._s];
+      var w=document.createElement('span');w.textContent=when(it);
+      m.appendChild(s);m.appendChild(w);
+      var v=document.createElement('div');v.className='m';v.textContent=[it.series,it.venue].filter(Boolean).join(' · ');
+      b.appendChild(t);b.appendChild(m);b.appendChild(v);
       b.addEventListener('click',function(){select(it);});
       li.appendChild(b);list.appendChild(li);
     });
@@ -156,25 +174,24 @@ ul{list-style:none;padding:0;display:flex;flex-direction:column;gap:8px}
   function select(it){
     state.current=it;
     try{localStorage.setItem('boundary:last',it.id);}catch(e){}
+    var st=statusOf(it);
     nowT.textContent=it.title;
-    nowS.textContent=[it.series,when(it)].filter(Boolean).join(' · ');
-    render();
-    destroyHls();
+    nowS.textContent=[it.series,it.venue,when(it)].filter(Boolean).join(' · ');
+    render();destroyHls();
     if(!it.url){
-      message(it.status==='upcoming'?'Not started yet':'No stream available',
-              it.status==='upcoming'?'This match has no stream yet. Check back at the start time.':'This item has no stream URL. Add one in streams.json.');
+      if(st==='upcoming')message('Starts '+when(it),'Streams open at the start time. Your local time is shown.',it.watch);
+      else if(st==='finished')message('Match finished','There is no replay in this app.',it.watch);
+      else message('Live now','This match streams on the official broadcaster.',it.watch);
       return;
     }
-    hideMessage();
-    play(it.url);
+    hideMessage();play(it.url);
   }
 
   function play(url){
     var isHls=/\.m3u8(\?|$)/i.test(url);
     if(isHls&&window.Hls&&Hls.isSupported()){
       var hls=new Hls({lowLatencyMode:true});
-      state.hls=hls;
-      hls.loadSource(url);hls.attachMedia(video);
+      state.hls=hls;hls.loadSource(url);hls.attachMedia(video);
       hls.on(Hls.Events.MANIFEST_PARSED,function(){
         var seen={};
         hls.levels.forEach(function(l,i){
@@ -186,23 +203,18 @@ ul{list-style:none;padding:0;display:flex;flex-direction:column;gap:8px}
       });
       hls.on(Hls.Events.ERROR,function(_,d){
         if(!d.fatal)return;
-        if(d.type===Hls.ErrorTypes.NETWORK_ERROR){message('Stream unavailable','The stream could not be loaded. It may be offline or blocked. Check the URL and try again.');hls.destroy();state.hls=null;}
+        if(d.type===Hls.ErrorTypes.NETWORK_ERROR){message('Stream unavailable','The stream could not be loaded. It may be offline or blocked. Check the URL and try again.',state.current&&state.current.watch);hls.destroy();state.hls=null;}
         else if(d.type===Hls.ErrorTypes.MEDIA_ERROR){hls.recoverMediaError();}
         else{message('Playback failed','Something went wrong while playing this stream.');hls.destroy();state.hls=null;}
       });
     }else{
-      video.src=url; // Safari native HLS, or plain MP4/WebM
-      video.addEventListener('error',function onE(){
-        video.removeEventListener('error',onE);
-        message('Stream unavailable','This stream could not be played in your browser.');
-      });
+      video.src=url;
+      video.addEventListener('error',function onE(){video.removeEventListener('error',onE);message('Stream unavailable','This stream could not be played in your browser.');});
       video.play().catch(function(){});
     }
   }
 
-  quality.addEventListener('change',function(){
-    if(state.hls)state.hls.currentLevel=parseInt(quality.value,10);
-  });
+  quality.addEventListener('change',function(){if(state.hls)state.hls.currentLevel=parseInt(quality.value,10);});
   document.getElementById('fs').addEventListener('click',function(){
     var el=video.parentElement;
     if(document.fullscreenElement)document.exitFullscreen();
@@ -220,13 +232,11 @@ ul{list-style:none;padding:0;display:flex;flex-direction:column;gap:8px}
   fetch('streams.json',{cache:'no-cache'}).then(function(r){return r.json();}).then(function(d){
     if(d.siteName){document.getElementById('site').textContent=d.siteName;document.title=d.siteName+' – Cricket video player';}
     state.items=d.items||[];
-    render();
-    var last=null;try{last=localStorage.getItem('boundary:last');}catch(e){}
-    var pick=state.items.filter(function(i){return i.id===last;})[0]||state.items.filter(function(i){return i.status==='live'&&i.url;})[0];
-    if(pick)select(pick);
-  }).catch(function(){
-    message('Could not load matches','streams.json is missing or invalid.');
-  });
+    var all=sorted();
+    var pick=all.filter(function(i){return i._s==='live';})[0]||all.filter(function(i){return i._s==='upcoming';})[0]||all[0];
+    if(pick)select(pick);else render();
+    setInterval(render,60000);
+  }).catch(function(){message('Could not load matches','streams.json is missing or invalid.');});
 })();
 </script>
 </body>
