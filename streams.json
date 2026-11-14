@@ -1,0 +1,28 @@
+{
+  "siteName": "Boundary",
+  "items": [
+    {
+      "id": "demo",
+      "title": "Demo stream (replace with your own)",
+      "series": "Test feed",
+      "status": "live",
+      "url": "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8",
+      "poster": ""
+    },
+    {
+      "id": "match-1",
+      "title": "India vs Australia, 1st Test",
+      "series": "Border-Gavaskar Trophy",
+      "status": "upcoming",
+      "start": "2026-12-06T04:00:00Z",
+      "url": ""
+    },
+    {
+      "id": "match-2",
+      "title": "England vs South Africa, 3rd ODI",
+      "series": "ODI Series",
+      "status": "replay",
+      "url": ""
+    }
+  ]
+}

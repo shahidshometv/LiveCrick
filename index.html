@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Boundary – Cricket video player</title>
+<meta name="theme-color" content="#0f1419">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700&family=Source+Sans+3:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --night:#0f1419; --stand:#182029; --line:#2a3541;
+  --light:#eef2f4; --mute:#93a1ad;
+  --pitch:#4c9f6a; --ball:#d02c3e;
+  --display:"Barlow Condensed","Arial Narrow",sans-serif;
+  --body:"Source Sans 3",system-ui,sans-serif;
+}
+*{box-sizing:border-box;margin:0}
+html,body{background:var(--night);color:var(--light);font-family:var(--body);font-size:16px;line-height:1.5}
+body{min-height:100vh}
+button,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--pitch);outline-offset:2px}
+
+header{display:flex;align-items:baseline;gap:14px;padding:16px clamp(16px,3vw,32px);border-bottom:1px solid var(--line)}
+header h1{font-family:var(--display);font-weight:700;font-size:2rem;letter-spacing:.01em}
+header p{color:var(--mute)}
+
+main{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:24px;padding:24px clamp(16px,3vw,32px);max-width:1500px;margin:0 auto}
+@media(max-width:960px){main{grid-template-columns:1fr}}
+
+.stage{background:#000;border-radius:6px;overflow:hidden;position:relative;aspect-ratio:16/9}
+video{width:100%;height:100%;display:block;background:#000}
+.overlay{position:absolute;inset:0;display:none;place-items:center;text-align:center;padding:24px;background:rgba(15,20,25,.92)}
+.overlay.show{display:grid}
+.overlay p{max-width:36ch;color:var(--mute)}
+.overlay strong{display:block;font-family:var(--display);font-size:1.6rem;color:var(--light);margin-bottom:6px}
+
+.now{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin-top:14px}
+.now h2{font-family:var(--display);font-weight:700;font-size:clamp(1.5rem,3vw,2.2rem);line-height:1.1}
+.now .sub{color:var(--mute)}
+.controls{display:flex;gap:8px;align-items:center}
+.controls label{color:var(--mute);font-size:.9rem}
+select{background:var(--stand);border:1px solid var(--line);border-radius:4px;padding:6px 8px}
+.btn{background:var(--stand);border:1px solid var(--line);border-radius:4px;padding:6px 12px;cursor:pointer}
+.btn:hover{border-color:var(--pitch)}
+
+aside h3{font-family:var(--display);font-weight:500;font-size:1.25rem;margin-bottom:10px}
+.tabs{display:flex;gap:6px;margin-bottom:12px}
+.tab{background:none;border:1px solid var(--line);border-radius:999px;padding:4px 14px;cursor:pointer;color:var(--mute)}
+.tab[aria-pressed="true"]{border-color:var(--pitch);color:var(--light);background:var(--stand)}
+
+ul{list-style:none;padding:0;display:flex;flex-direction:column;gap:8px}
+.item{width:100%;text-align:left;background:var(--stand);border:1px solid var(--line);border-left:4px solid var(--line);border-radius:4px;padding:12px 14px;cursor:pointer}
+.item:hover{border-color:var(--mute)}
+.item[aria-current="true"]{border-color:var(--pitch);border-left-color:var(--pitch)}
+.item[data-status="live"]{border-left-color:var(--ball)}
+.item .t{font-weight:600}
+.item .m{color:var(--mute);font-size:.9rem;display:flex;gap:10px;margin-top:2px}
+.badge{font-weight:600;color:var(--light)}
+.badge.live{color:var(--ball)}
+.empty{color:var(--mute);padding:16px 0}
+@media(prefers-reduced-motion:no-preference){.badge.live::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--ball);margin-right:6px;animation:p 1.6s ease-in-out infinite}}
+@media(prefers-reduced-motion:reduce){.badge.live::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--ball);margin-right:6px}}
+@keyframes p{50%{opacity:.35}}
+</style>
+</head>
+<body>
+<header>
+  <h1 id="site">Boundary</h1>
+  <p>Cricket video player</p>
+</header>
+
+<main>
+  <section aria-label="Player">
+    <div class="stage">
+      <video id="video" controls playsinline preload="metadata"></video>
+      <div class="overlay show" id="overlay"><div><strong id="ovT">Pick a match</strong><p id="ovP">Choose a match from the list to start watching.</p></div></div>
+    </div>
+    <div class="now">
+      <div>
+        <h2 id="nowT">No match selected</h2>
+        <div class="sub" id="nowS"></div>
+      </div>
+      <div class="controls">
+        <label for="quality">Quality</label>
+        <select id="quality" disabled><option value="-1">Auto</option></select>
+        <button class="btn" id="fs" type="button">Fullscreen</button>
+      </div>
+    </div>
+  </section>
+
+  <aside aria-label="Matches">
+    <h3>Matches</h3>
+    <div class="tabs" role="group" aria-label="Filter matches">
+      <button class="tab" type="button" data-f="all" aria-pressed="true">All</button>
+      <button class="tab" type="button" data-f="live" aria-pressed="false">Live</button>
+      <button class="tab" type="button" data-f="upcoming" aria-pressed="false">Upcoming</button>
+      <button class="tab" type="button" data-f="replay" aria-pressed="false">Replays</button>
+    </div>
+    <ul id="list"></ul>
+  </aside>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js"></script>
+<script>
+(function(){
+  var video=document.getElementById('video'), list=document.getElementById('list');
+  var overlay=document.getElementById('overlay'), ovT=document.getElementById('ovT'), ovP=document.getElementById('ovP');
+  var nowT=document.getElementById('nowT'), nowS=document.getElementById('nowS');
+  var quality=document.getElementById('quality');
+  var state={items:[],filter:'all',current:null,hls:null};
+  var LABEL={live:'Live',upcoming:'Upcoming',replay:'Replay'};
+
+  function message(title,text){ovT.textContent=title;ovP.textContent=text;overlay.classList.add('show');}
+  function hideMessage(){overlay.classList.remove('show');}
+
+  function when(it){
+    if(it.status==='upcoming'&&it.start){
+      try{return new Date(it.start).toLocaleString([], {weekday:'short',day:'numeric',month:'short',hour:'numeric',minute:'2-digit'});}catch(e){}
+    }
+    return '';
+  }
+
+  function render(){
+    list.textContent='';
+    var shown=state.items.filter(function(i){return state.filter==='all'||i.status===state.filter;});
+    if(!shown.length){
+      var li=document.createElement('li');li.className='empty';
+      li.textContent='No '+(state.filter==='all'?'':LABEL[state.filter].toLowerCase()+' ')+'matches yet. Add them in streams.json.';
+      list.appendChild(li);return;
+    }
+    shown.forEach(function(it){
+      var li=document.createElement('li');
+      var b=document.createElement('button');
+      b.type='button';b.className='item';b.dataset.status=it.status;
+      if(state.current&&state.current.id===it.id)b.setAttribute('aria-current','true');
+      var t=document.createElement('div');t.className='t';t.textContent=it.title;
+      var m=document.createElement('div');m.className='m';
+      var s=document.createElement('span');s.className='badge '+it.status;s.textContent=LABEL[it.status]||it.status;
+      var se=document.createElement('span');se.textContent=it.series||'';
+      m.appendChild(s);m.appendChild(se);
+      var w=when(it);if(w){var ws=document.createElement('span');ws.textContent=w;m.appendChild(ws);}
+      b.appendChild(t);b.appendChild(m);
+      b.addEventListener('click',function(){select(it);});
+      li.appendChild(b);list.appendChild(li);
+    });
+  }
+
+  function destroyHls(){
+    if(state.hls){state.hls.destroy();state.hls=null;}
+    video.removeAttribute('src');video.load();
+    quality.innerHTML='<option value="-1">Auto</option>';quality.disabled=true;
+  }
+
+  function select(it){
+    state.current=it;
+    try{localStorage.setItem('boundary:last',it.id);}catch(e){}
+    nowT.textContent=it.title;
+    nowS.textContent=[it.series,when(it)].filter(Boolean).join(' · ');
+    render();
+    destroyHls();
+    if(!it.url){
+      message(it.status==='upcoming'?'Not started yet':'No stream available',
+              it.status==='upcoming'?'This match has no stream yet. Check back at the start time.':'This item has no stream URL. Add one in streams.json.');
+      return;
+    }
+    hideMessage();
+    play(it.url);
+  }
+
+  function play(url){
+    var isHls=/\.m3u8(\?|$)/i.test(url);
+    if(isHls&&window.Hls&&Hls.isSupported()){
+      var hls=new Hls({lowLatencyMode:true});
+      state.hls=hls;
+      hls.loadSource(url);hls.attachMedia(video);
+      hls.on(Hls.Events.MANIFEST_PARSED,function(){
+        var seen={};
+        hls.levels.forEach(function(l,i){
+          if(!l.height||seen[l.height])return;seen[l.height]=1;
+          var o=document.createElement('option');o.value=i;o.textContent=l.height+'p';quality.appendChild(o);
+        });
+        quality.disabled=quality.options.length<2;
+        video.play().catch(function(){});
+      });
+      hls.on(Hls.Events.ERROR,function(_,d){
+        if(!d.fatal)return;
+        if(d.type===Hls.ErrorTypes.NETWORK_ERROR){message('Stream unavailable','The stream could not be loaded. It may be offline or blocked. Check the URL and try again.');hls.destroy();state.hls=null;}
+        else if(d.type===Hls.ErrorTypes.MEDIA_ERROR){hls.recoverMediaError();}
+        else{message('Playback failed','Something went wrong while playing this stream.');hls.destroy();state.hls=null;}
+      });
+    }else{
+      video.src=url; // Safari native HLS, or plain MP4/WebM
+      video.addEventListener('error',function onE(){
+        video.removeEventListener('error',onE);
+        message('Stream unavailable','This stream could not be played in your browser.');
+      });
+      video.play().catch(function(){});
+    }
+  }
+
+  quality.addEventListener('change',function(){
+    if(state.hls)state.hls.currentLevel=parseInt(quality.value,10);
+  });
+  document.getElementById('fs').addEventListener('click',function(){
+    var el=video.parentElement;
+    if(document.fullscreenElement)document.exitFullscreen();
+    else if(el.requestFullscreen)el.requestFullscreen();
+    else if(video.webkitEnterFullscreen)video.webkitEnterFullscreen();
+  });
+  document.querySelectorAll('.tab').forEach(function(t){
+    t.addEventListener('click',function(){
+      state.filter=t.dataset.f;
+      document.querySelectorAll('.tab').forEach(function(x){x.setAttribute('aria-pressed',x===t?'true':'false');});
+      render();
+    });
+  });
+
+  fetch('streams.json',{cache:'no-cache'}).then(function(r){return r.json();}).then(function(d){
+    if(d.siteName){document.getElementById('site').textContent=d.siteName;document.title=d.siteName+' – Cricket video player';}
+    state.items=d.items||[];
+    render();
+    var last=null;try{last=localStorage.getItem('boundary:last');}catch(e){}
+    var pick=state.items.filter(function(i){return i.id===last;})[0]||state.items.filter(function(i){return i.status==='live'&&i.url;})[0];
+    if(pick)select(pick);
+  }).catch(function(){
+    message('Could not load matches','streams.json is missing or invalid.');
+  });
+})();
+</script>
+</body>
+</html>
