@@ -38,7 +38,7 @@ video{width:100%;height:100%;display:block;background:#000}
 
 .now{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin-top:14px}
 .now h2{font-family:var(--display);font-weight:700;font-size:clamp(1.5rem,3vw,2.2rem);line-height:1.1}
-.now .sub{color:var(--mute)}
+.now .sub{color:var(--mute);white-space:pre-line}
 .controls{display:flex;gap:8px;align-items:center}
 .controls label{color:var(--mute);font-size:.9rem}
 select{background:var(--stand);border:1px solid var(--line);border-radius:4px;padding:6px 8px}
@@ -111,11 +111,16 @@ ul{list-style:none;padding:0;display:flex;flex-direction:column;gap:8px}
   var overlay=document.getElementById('overlay'), ovT=document.getElementById('ovT'), ovP=document.getElementById('ovP'), ovA=document.getElementById('ovA');
   var nowT=document.getElementById('nowT'), nowS=document.getElementById('nowS');
   var quality=document.getElementById('quality');
-  var state={items:[],filter:'all',current:null,hls:null};
+  var state={manual:[],api:[],items:[],filter:'all',current:null,hls:null};
   var LABEL={live:'Live',upcoming:'Upcoming',finished:'Finished'};
 
   function statusOf(it){
     var s=Date.parse(it.start), e=s+(it.hours||8)*36e5, n=Date.now();
+    if(it.api){
+      if(it.api.ended)return 'finished';
+      if(it.api.started)return n>=e+864e5?'finished':'live';
+      return n>=e?'finished':'upcoming';
+    }
     if(n>=e)return 'finished';
     if(n<s)return 'upcoming';
     return it.timeTbc?'upcoming':'live';
@@ -124,6 +129,18 @@ ul{list-style:none;padding:0;display:flex;flex-direction:column;gap:8px}
     if(it.timeTbc)return it.dateLabel||'';
     try{return new Date(it.start).toLocaleString([], {weekday:'short',day:'numeric',month:'short',hour:'numeric',minute:'2-digit'});}catch(e){return '';}
   }
+  function scoreText(it){
+    if(!it.api||!it.api.score||!it.api.score.length)return '';
+    return it.api.score.map(function(x){
+      var name=(x.inning||'').replace(/\s*Inning\s*\d+/i,'');
+      return name+' '+x.r+'/'+x.w+(x.o!=null?' ('+x.o+' ov)':'');
+    }).join(' · ');
+  }
+  function infoLine(it){
+    var st=statusOf(it);
+    return (st!=='upcoming'&&it.api&&it.api.status)?it.api.status:'';
+  }
+
   function message(title,text,watch){
     ovT.textContent=title;ovP.textContent=text;
     if(watch&&watch.url){ovA.href=watch.url;ovA.textContent='Watch on '+watch.name;ovA.hidden=false;}else{ovA.hidden=true;}
@@ -131,6 +148,28 @@ ul{list-style:none;padding:0;display:flex;flex-direction:column;gap:8px}
   }
   function hideMessage(){overlay.classList.remove('show');}
 
+  /* ---- merge hand-written fixtures with the live feed ---- */
+  function clean(n){return n.toLowerCase().replace(/\b(u-?19s?|under-?19s?|women|men)\b/g,'').replace(/\s+/g,' ').trim();}
+  function teamsOf(it){
+    var p=it.title.split(',')[0].split(/\s+v(?:s\.?)?\s+/i);
+    return p.length===2?[clean(p[0]),clean(p[1])]:null;
+  }
+  function build(){
+    var used={};
+    var items=state.manual.map(function(m){
+      var it=Object.assign({},m), t=teamsOf(m), ms=Date.parse(m.start);
+      if(t){
+        for(var i=0;i<state.api.length;i++){
+          var a=state.api[i]; if(used[a.id])continue;
+          var n=a.title.toLowerCase();
+          if(n.indexOf(t[0])>-1&&n.indexOf(t[1])>-1&&Math.abs(Date.parse(a.start)-ms)<36e5*30){it.api=a.api;used[a.id]=1;break;}
+        }
+      }
+      return it;
+    });
+    state.api.forEach(function(a){if(!used[a.id])items.push(a);});
+    state.items=items;
+  }
   function sorted(){
     var rank={live:0,upcoming:1,finished:2};
     return state.items.map(function(i){i._s=statusOf(i);return i;}).sort(function(a,b){
@@ -160,11 +199,16 @@ ul{list-style:none;padding:0;display:flex;flex-direction:column;gap:8px}
       m.appendChild(s);m.appendChild(w);
       var v=document.createElement('div');v.className='m';v.textContent=[it.series,it.venue].filter(Boolean).join(' · ');
       b.appendChild(t);b.appendChild(m);b.appendChild(v);
+      var sc=scoreText(it);
+      if(sc&&it._s!=='upcoming'){var x=document.createElement('div');x.className='m';x.textContent=sc;b.appendChild(x);}
       b.addEventListener('click',function(){select(it);});
       li.appendChild(b);list.appendChild(li);
     });
   }
 
+  function nowLine(it){
+    return [it.series,it.venue,when(it)].filter(Boolean).join(' · ')+(infoLine(it)?'\n'+infoLine(it):'');
+  }
   function destroyHls(){
     if(state.hls){state.hls.destroy();state.hls=null;}
     video.removeAttribute('src');video.load();
@@ -176,12 +220,13 @@ ul{list-style:none;padding:0;display:flex;flex-direction:column;gap:8px}
     try{localStorage.setItem('boundary:last',it.id);}catch(e){}
     var st=statusOf(it);
     nowT.textContent=it.title;
-    nowS.textContent=[it.series,it.venue,when(it)].filter(Boolean).join(' · ');
+    nowS.textContent=nowLine(it);
     render();destroyHls();
     if(!it.url){
+      var sc=scoreText(it);
       if(st==='upcoming')message('Starts '+when(it),'Streams open at the start time. Your local time is shown.',it.watch);
-      else if(st==='finished')message('Match finished','There is no replay in this app.',it.watch);
-      else message('Live now','This match streams on the official broadcaster.',it.watch);
+      else if(st==='finished')message('Match finished',infoLine(it)||'There is no replay in this app.',it.watch);
+      else message('Live now',sc||'This match streams on the official broadcaster.',it.watch);
       return;
     }
     hideMessage();play(it.url);
@@ -229,13 +274,33 @@ ul{list-style:none;padding:0;display:flex;flex-direction:column;gap:8px}
     });
   });
 
+  /* ---- live feed (optional; silently skipped when /api/matches is unavailable) ---- */
+  function loadApi(){
+    return fetch('/api/matches',{cache:'no-cache'})
+      .then(function(r){return r.ok?r.json():null;})
+      .then(function(d){state.api=(d&&d.matches)||[];})
+      .catch(function(){state.api=[];});
+  }
+  function refresh(){
+    loadApi().then(function(){
+      build();render();
+      if(state.current){
+        var cur=state.items.filter(function(i){return i.id===state.current.id;})[0];
+        if(cur){state.current=cur;nowS.textContent=nowLine(cur);}
+      }
+    });
+  }
+
   fetch('streams.json',{cache:'no-cache'}).then(function(r){return r.json();}).then(function(d){
     if(d.siteName){document.getElementById('site').textContent=d.siteName;document.title=d.siteName+' – Cricket video player';}
-    state.items=d.items||[];
+    state.manual=d.items||[];
+    return loadApi();
+  }).then(function(){
+    build();
     var all=sorted();
     var pick=all.filter(function(i){return i._s==='live';})[0]||all.filter(function(i){return i._s==='upcoming';})[0]||all[0];
     if(pick)select(pick);else render();
-    setInterval(render,60000);
+    setInterval(refresh,120000);
   }).catch(function(){message('Could not load matches','streams.json is missing or invalid.');});
 })();
 </script>
