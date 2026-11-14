@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>Admin – Boundary</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700&family=Source+Sans+3:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{--night:#0f1419;--stand:#182029;--line:#2a3541;--light:#eef2f4;--mute:#93a1ad;--pitch:#4c9f6a;--ball:#d02c3e;
+--display:"Barlow Condensed","Arial Narrow",sans-serif;--body:"Source Sans 3",system-ui,sans-serif}
+*{box-sizing:border-box;margin:0}
+body{background:var(--night);color:var(--light);font-family:var(--body);line-height:1.5;min-height:100vh}
+button,input{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--pitch);outline-offset:2px}
+header{display:flex;align-items:baseline;gap:14px;padding:16px clamp(16px,3vw,32px);border-bottom:1px solid var(--line)}
+header h1{font-family:var(--display);font-weight:700;font-size:2rem}
+header a{color:var(--mute);margin-left:auto}
+main{max-width:900px;margin:0 auto;padding:24px clamp(16px,3vw,32px)}
+h2{font-family:var(--display);font-weight:500;font-size:1.4rem;margin-bottom:8px}
+p.hint{color:var(--mute);margin-bottom:16px}
+input[type=password],input[type=url],input[type=search]{width:100%;background:var(--stand);border:1px solid var(--line);border-radius:4px;padding:8px 10px}
+.btn{background:var(--stand);border:1px solid var(--line);border-radius:4px;padding:7px 14px;cursor:pointer}
+.btn:hover{border-color:var(--pitch)}
+.btn.pri{background:var(--pitch);border-color:var(--pitch);color:#07120b;font-weight:600}
+.row{display:flex;gap:8px}
+.login{max-width:420px}
+.msg{margin-top:8px;min-height:1.4em;color:var(--mute)}
+.msg.err{color:#ff8a96}.msg.ok{color:var(--pitch)}
+.tools{margin:16px 0}
+ul{list-style:none;padding:0;display:flex;flex-direction:column;gap:10px}
+.card{background:var(--stand);border:1px solid var(--line);border-left:4px solid var(--line);border-radius:4px;padding:12px 14px}
+.card[data-s="live"]{border-left-color:var(--ball)}
+.card[data-s="upcoming"]{border-left-color:var(--pitch)}
+.card .t{font-weight:600}
+.card .m{color:var(--mute);font-size:.9rem;margin-bottom:8px}
+.card .has{color:var(--pitch);font-weight:600}
+.hidden{display:none}
+</style>
+</head>
+<body>
+<header><h1>Admin</h1><a href="/">Back to site</a></header>
+<main>
+  <section id="login" class="login">
+    <h2>Sign in</h2>
+    <p class="hint">Enter the admin password you set in Vercel.</p>
+    <div class="row">
+      <input id="pw" type="password" autocomplete="current-password" aria-label="Admin password">
+      <button class="btn pri" id="go" type="button">Unlock</button>
+    </div>
+    <div class="msg" id="loginMsg" role="status"></div>
+  </section>
+
+  <section id="panel" class="hidden">
+    <h2>Embed links</h2>
+    <p class="hint">Paste a link for any match and press Save. YouTube links (watch, live or youtu.be), direct .m3u8 / .mp4 links and iframe-friendly https pages all work. The player shows it straight away. Only add streams you have the right to show.</p>
+    <div class="tools"><input id="q" type="search" placeholder="Filter matches" aria-label="Filter matches"></div>
+    <ul id="list"></ul>
+  </section>
+</main>
+
+<script src="shared.js"></script>
+<script>
+(function(){
+  var B=window.Boundary, pw='';
+  try{pw=sessionStorage.getItem('boundary:pw')||'';}catch(e){}
+  var loginEl=document.getElementById('login'), panel=document.getElementById('panel');
+  var pwEl=document.getElementById('pw'), loginMsg=document.getElementById('loginMsg'), list=document.getElementById('list'), q=document.getElementById('q');
+  var items=[];
+
+  function call(body){
+    return fetch('/api/embeds',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+pw},body:JSON.stringify(body)})
+      .then(function(r){return r.json().catch(function(){return {};}).then(function(d){return {ok:r.ok,d:d};});});
+  }
+  function unlock(){
+    loginEl.classList.add('hidden');panel.classList.remove('hidden');
+    B.loadData().then(function(d){items=B.sorted(d.items);draw();}).catch(function(){list.textContent='Could not load matches.';});
+  }
+  function login(){
+    pw=pwEl.value||pw;
+    loginMsg.className='msg';loginMsg.textContent='Checking...';
+    call({action:'login'}).then(function(r){
+      if(r.ok){try{sessionStorage.setItem('boundary:pw',pw);}catch(e){}unlock();}
+      else{loginMsg.className='msg err';loginMsg.textContent=r.d.error||'Could not sign in';}
+    }).catch(function(){loginMsg.className='msg err';loginMsg.textContent='Network error';});
+  }
+  document.getElementById('go').addEventListener('click',login);
+  pwEl.addEventListener('keydown',function(e){if(e.key==='Enter')login();});
+  q.addEventListener('input',draw);
+
+  function draw(){
+    var term=q.value.trim().toLowerCase();
+    list.textContent='';
+    items.filter(function(i){return !term||(i.title+' '+(i.series||'')).toLowerCase().indexOf(term)>-1;}).forEach(function(it){
+      var li=document.createElement('li');li.className='card';li.dataset.s=it._s;
+      var t=document.createElement('div');t.className='t';t.textContent=it.title;
+      var m=document.createElement('div');m.className='m';
+      m.textContent=[it._s.charAt(0).toUpperCase()+it._s.slice(1),B.when(it),it.series,it.venue].filter(Boolean).join(' · ');
+      var row=document.createElement('div');row.className='row';
+      var inp=document.createElement('input');inp.type='url';inp.placeholder='https://www.youtube.com/watch?v=...';inp.value=it.embed||'';
+      inp.setAttribute('aria-label','Embed link for '+it.title);
+      var save=document.createElement('button');save.type='button';save.className='btn pri';save.textContent='Save';
+      var clr=document.createElement('button');clr.type='button';clr.className='btn';clr.textContent='Clear';
+      var msg=document.createElement('div');msg.className='msg';msg.setAttribute('role','status');
+      function send(url){
+        msg.className='msg';msg.textContent='Saving...';
+        call({id:it.id,url:url}).then(function(r){
+          if(r.ok){it.embed=url;inp.value=url;msg.className='msg ok';msg.textContent=url?'Saved. The site will use this link within a few seconds.':'Cleared.';}
+          else{msg.className='msg err';msg.textContent=r.d.error||'Could not save';if(r.d.error==='Wrong password'){try{sessionStorage.removeItem('boundary:pw');}catch(e){}}}
+        }).catch(function(){msg.className='msg err';msg.textContent='Network error';});
+      }
+      save.addEventListener('click',function(){
+        var v=inp.value.trim();
+        if(v&&!B.embedOf(v)){msg.className='msg err';msg.textContent='Enter a valid link starting with https://';return;}
+        send(v);
+      });
+      clr.addEventListener('click',function(){send('');});
+      row.appendChild(inp);row.appendChild(save);row.appendChild(clr);
+      li.appendChild(t);li.appendChild(m);li.appendChild(row);li.appendChild(msg);
+      list.appendChild(li);
+    });
+    if(!list.children.length){var e=document.createElement('li');e.className='hint';e.textContent='No matches found.';list.appendChild(e);}
+  }
+
+  if(pw){call({action:'login'}).then(function(r){if(r.ok)unlock();}).catch(function(){});}
+})();
+</script>
+</body>
+</html>
