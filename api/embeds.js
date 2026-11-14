@@ -1,15 +1,31 @@
 // GET  /api/embeds  -> { embeds: { matchId: url } }      (public)
 // POST /api/embeds  -> save or clear one link             (needs ADMIN_PASSWORD)
-// Storage: an Upstash Redis database connected to the Vercel project.
+// Storage: Neon Postgres (DATABASE_URL) or, as a fallback, Upstash Redis.
 const crypto = require('crypto');
-const KEY = 'boundary:embeds';
 
-function store() {
+/* ---------- Neon (Postgres) ---------- */
+let neonSql = null, tableReady = false;
+function neonUrl() { return process.env.DATABASE_URL || process.env.POSTGRES_URL || ''; }
+async function neon() {
+  if (!neonSql) {
+    const { neon } = require('@neondatabase/serverless');
+    neonSql = neon(neonUrl());
+  }
+  if (!tableReady) {
+    await neonSql`CREATE TABLE IF NOT EXISTS embeds (id text PRIMARY KEY, url text NOT NULL, updated_at timestamptz NOT NULL DEFAULT now())`;
+    tableReady = true;
+  }
+  return neonSql;
+}
+
+/* ---------- Upstash (Redis REST) ---------- */
+const KEY = 'boundary:embeds';
+function upstash() {
   const url = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
   const token = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
   return url && token ? { url, token } : null;
 }
-async function cmd(s, args) {
+async function redis(s, args) {
   const r = await fetch(s.url, {
     method: 'POST',
     headers: { Authorization: 'Bearer ' + s.token, 'Content-Type': 'application/json' },
@@ -19,23 +35,53 @@ async function cmd(s, args) {
   if (d.error) throw new Error(d.error);
   return d.result;
 }
-async function readAll(s) {
-  const v = await cmd(s, ['GET', KEY]);
+async function redisAll(s) {
+  const v = await redis(s, ['GET', KEY]);
   if (!v) return {};
   try { const o = JSON.parse(v); return o && typeof o === 'object' ? o : {}; } catch (e) { return {}; }
 }
+
+/* ---------- one interface over both ---------- */
+function backend() {
+  if (neonUrl()) {
+    return {
+      async all() {
+        const sql = await neon();
+        const rows = await sql`SELECT id, url FROM embeds`;
+        const o = {}; rows.forEach(function (r) { o[r.id] = r.url; }); return o;
+      },
+      async count() { const sql = await neon(); const r = await sql`SELECT count(*)::int AS n FROM embeds`; return r[0].n; },
+      async set(id, url) {
+        const sql = await neon();
+        await sql`INSERT INTO embeds (id, url) VALUES (${id}, ${url}) ON CONFLICT (id) DO UPDATE SET url = EXCLUDED.url, updated_at = now()`;
+      },
+      async del(id) { const sql = await neon(); await sql`DELETE FROM embeds WHERE id = ${id}`; }
+    };
+  }
+  const s = upstash();
+  if (s) {
+    return {
+      all: function () { return redisAll(s); },
+      async count() { return Object.keys(await redisAll(s)).length; },
+      async set(id, url) { const a = await redisAll(s); a[id] = url; await redis(s, ['SET', KEY, JSON.stringify(a)]); },
+      async del(id) { const a = await redisAll(s); delete a[id]; await redis(s, ['SET', KEY, JSON.stringify(a)]); }
+    };
+  }
+  return null;
+}
+
 function same(a, b) {
   const x = Buffer.from(String(a)), y = Buffer.from(String(b));
   return x.length === y.length && crypto.timingSafeEqual(x, y);
 }
 
 module.exports = async function handler(req, res) {
-  const s = store();
+  const db = backend();
 
   if (req.method === 'GET') {
     res.setHeader('Cache-Control', 'public, s-maxage=10, stale-while-revalidate=30');
-    if (!s) { res.status(200).json({ embeds: {}, error: 'Storage is not connected' }); return; }
-    try { res.status(200).json({ embeds: await readAll(s) }); }
+    if (!db) { res.status(200).json({ embeds: {}, error: 'Storage is not connected' }); return; }
+    try { res.status(200).json({ embeds: await db.all() }); }
     catch (e) { res.status(200).json({ embeds: {}, error: 'Read failed' }); }
     return;
   }
@@ -53,7 +99,7 @@ module.exports = async function handler(req, res) {
   body = body || {};
   if (body.action === 'login') { res.status(200).json({ ok: true }); return; }
 
-  if (!s) { res.status(500).json({ error: 'Storage is not connected. Add an Upstash Redis database to the project.' }); return; }
+  if (!db) { res.status(500).json({ error: 'Storage is not connected. Connect a Neon database (DATABASE_URL) to the project.' }); return; }
   const id = String(body.id || '');
   const link = String(body.url || '').trim();
   if (!/^[\w.-]{1,80}$/.test(id)) { res.status(400).json({ error: 'Bad match id' }); return; }
@@ -63,12 +109,11 @@ module.exports = async function handler(req, res) {
     if (u.protocol !== 'https:' || link.length > 500) { res.status(400).json({ error: 'Link must start with https:// and be under 500 characters' }); return; }
   }
   try {
-    const all = await readAll(s);
     if (link) {
+      const all = await db.all();
       if (!(id in all) && Object.keys(all).length >= 500) { res.status(400).json({ error: 'Too many saved links. Clear some first.' }); return; }
-      all[id] = link;
-    } else { delete all[id]; }
-    await cmd(s, ['SET', KEY, JSON.stringify(all)]);
+      await db.set(id, link);
+    } else { await db.del(id); }
     res.status(200).json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: 'Could not save' });
