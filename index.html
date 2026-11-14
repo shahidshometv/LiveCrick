@@ -31,6 +31,9 @@ main{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:24px;padding:24p
 
 .stage{background:#000;border-radius:6px;overflow:hidden;position:relative;aspect-ratio:16/9}
 video{width:100%;height:100%;display:block;background:#000}
+video.hide{display:none}
+iframe{width:100%;height:100%;border:0;display:none;background:#000}
+iframe.show{display:block}
 .overlay{position:absolute;inset:0;display:none;place-items:center;text-align:center;padding:24px;background:rgba(15,20,25,.92)}
 .overlay.show{display:grid}
 .overlay p{max-width:36ch;color:var(--mute)}
@@ -77,6 +80,7 @@ ul{list-style:none;padding:0;display:flex;flex-direction:column;gap:8px}
   <section aria-label="Player">
     <div class="stage">
       <video id="video" controls playsinline preload="metadata"></video>
+      <iframe id="frame" title="Match stream" allowfullscreen allow="autoplay; fullscreen; picture-in-picture; encrypted-media" referrerpolicy="strict-origin-when-cross-origin" sandbox="allow-scripts allow-same-origin allow-presentation allow-popups allow-popups-to-escape-sandbox"></iframe>
       <div class="overlay show" id="overlay"><div><strong id="ovT">Pick a match</strong><p id="ovP">Choose a match from the list to start watching.</p><a class="btn pri" id="ovA" target="_blank" rel="noopener noreferrer" hidden></a></div></div>
     </div>
     <div class="now">
@@ -105,30 +109,18 @@ ul{list-style:none;padding:0;display:flex;flex-direction:column;gap:8px}
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js"></script>
+<script src="shared.js"></script>
 <script>
 (function(){
-  var video=document.getElementById('video'), list=document.getElementById('list');
+  var B=window.Boundary;
+  var video=document.getElementById('video'), frame=document.getElementById('frame'), list=document.getElementById('list');
   var overlay=document.getElementById('overlay'), ovT=document.getElementById('ovT'), ovP=document.getElementById('ovP'), ovA=document.getElementById('ovA');
   var nowT=document.getElementById('nowT'), nowS=document.getElementById('nowS');
   var quality=document.getElementById('quality');
-  var state={manual:[],api:[],items:[],filter:'all',current:null,hls:null};
+  var state={items:[],filter:'all',current:null,hls:null};
   var LABEL={live:'Live',upcoming:'Upcoming',finished:'Finished'};
+  var statusOf=B.statusOf, when=B.when;
 
-  function statusOf(it){
-    var s=Date.parse(it.start), e=s+(it.hours||8)*36e5, n=Date.now();
-    if(it.api){
-      if(it.api.ended)return 'finished';
-      if(it.api.started)return n>=e+864e5?'finished':'live';
-      return n>=e?'finished':'upcoming';
-    }
-    if(n>=e)return 'finished';
-    if(n<s)return 'upcoming';
-    return it.timeTbc?'upcoming':'live';
-  }
-  function when(it){
-    if(it.timeTbc)return it.dateLabel||'';
-    try{return new Date(it.start).toLocaleString([], {weekday:'short',day:'numeric',month:'short',hour:'numeric',minute:'2-digit'});}catch(e){return '';}
-  }
   function scoreText(it){
     if(!it.api||!it.api.score||!it.api.score.length)return '';
     return it.api.score.map(function(x){
@@ -136,10 +128,8 @@ ul{list-style:none;padding:0;display:flex;flex-direction:column;gap:8px}
       return name+' '+x.r+'/'+x.w+(x.o!=null?' ('+x.o+' ov)':'');
     }).join(' · ');
   }
-  function infoLine(it){
-    var st=statusOf(it);
-    return (st!=='upcoming'&&it.api&&it.api.status)?it.api.status:'';
-  }
+  function infoLine(it){return (statusOf(it)!=='upcoming'&&it.api&&it.api.status)?it.api.status:'';}
+  function nowLine(it){return [it.series,it.venue,when(it)].filter(Boolean).join(' · ')+(infoLine(it)?'\n'+infoLine(it):'');}
 
   function message(title,text,watch){
     ovT.textContent=title;ovP.textContent=text;
@@ -148,40 +138,9 @@ ul{list-style:none;padding:0;display:flex;flex-direction:column;gap:8px}
   }
   function hideMessage(){overlay.classList.remove('show');}
 
-  /* ---- merge hand-written fixtures with the live feed ---- */
-  function clean(n){return n.toLowerCase().replace(/\b(u-?19s?|under-?19s?|women|men)\b/g,'').replace(/\s+/g,' ').trim();}
-  function teamsOf(it){
-    var p=it.title.split(',')[0].split(/\s+v(?:s\.?)?\s+/i);
-    return p.length===2?[clean(p[0]),clean(p[1])]:null;
-  }
-  function build(){
-    var used={};
-    var items=state.manual.map(function(m){
-      var it=Object.assign({},m), t=teamsOf(m), ms=Date.parse(m.start);
-      if(t){
-        for(var i=0;i<state.api.length;i++){
-          var a=state.api[i]; if(used[a.id])continue;
-          var n=a.title.toLowerCase();
-          if(n.indexOf(t[0])>-1&&n.indexOf(t[1])>-1&&Math.abs(Date.parse(a.start)-ms)<36e5*30){it.api=a.api;used[a.id]=1;break;}
-        }
-      }
-      return it;
-    });
-    state.api.forEach(function(a){if(!used[a.id])items.push(a);});
-    state.items=items;
-  }
-  function sorted(){
-    var rank={live:0,upcoming:1,finished:2};
-    return state.items.map(function(i){i._s=statusOf(i);return i;}).sort(function(a,b){
-      if(rank[a._s]!==rank[b._s])return rank[a._s]-rank[b._s];
-      var d=Date.parse(a.start)-Date.parse(b.start);
-      return a._s==='finished'?-d:d;
-    });
-  }
-
   function render(){
     list.textContent='';
-    var shown=sorted().filter(function(i){return state.filter==='all'||i._s===state.filter;});
+    var shown=B.sorted(state.items).filter(function(i){return state.filter==='all'||i._s===state.filter;});
     if(!shown.length){
       var li=document.createElement('li');li.className='empty';
       li.textContent='No '+(state.filter==='all'?'':LABEL[state.filter].toLowerCase()+' ')+'matches right now.';
@@ -197,6 +156,7 @@ ul{list-style:none;padding:0;display:flex;flex-direction:column;gap:8px}
       var s=document.createElement('span');s.className='badge '+it._s;s.textContent=LABEL[it._s];
       var w=document.createElement('span');w.textContent=when(it);
       m.appendChild(s);m.appendChild(w);
+      if(it.embed||it.url){var p=document.createElement('span');p.textContent='▶ Play here';m.appendChild(p);}
       var v=document.createElement('div');v.className='m';v.textContent=[it.series,it.venue].filter(Boolean).join(' · ');
       b.appendChild(t);b.appendChild(m);b.appendChild(v);
       var sc=scoreText(it);
@@ -206,12 +166,10 @@ ul{list-style:none;padding:0;display:flex;flex-direction:column;gap:8px}
     });
   }
 
-  function nowLine(it){
-    return [it.series,it.venue,when(it)].filter(Boolean).join(' · ')+(infoLine(it)?'\n'+infoLine(it):'');
-  }
-  function destroyHls(){
+  function resetPlayers(){
     if(state.hls){state.hls.destroy();state.hls=null;}
-    video.removeAttribute('src');video.load();
+    video.removeAttribute('src');video.load();video.classList.remove('hide');
+    frame.classList.remove('show');frame.removeAttribute('src');
     quality.innerHTML='<option value="-1">Auto</option>';quality.disabled=true;
   }
 
@@ -221,15 +179,18 @@ ul{list-style:none;padding:0;display:flex;flex-direction:column;gap:8px}
     var st=statusOf(it);
     nowT.textContent=it.title;
     nowS.textContent=nowLine(it);
-    render();destroyHls();
-    if(!it.url){
-      var sc=scoreText(it);
-      if(st==='upcoming')message('Starts '+when(it),'Streams open at the start time. Your local time is shown.',it.watch);
-      else if(st==='finished')message('Match finished',infoLine(it)||'There is no replay in this app.',it.watch);
-      else message('Live now',sc||'This match streams on the official broadcaster.',it.watch);
+    render();resetPlayers();
+    var em=B.embedOf(it.embed||it.url);
+    if(em){
+      hideMessage();
+      if(em.kind==='iframe'){video.classList.add('hide');frame.src=em.src;frame.classList.add('show');}
+      else play(em.src);
       return;
     }
-    hideMessage();play(it.url);
+    var sc=scoreText(it);
+    if(st==='upcoming')message('Starts '+when(it),'Streams open at the start time. Your local time is shown.',it.watch);
+    else if(st==='finished')message('Match finished',infoLine(it)||'There is no replay in this app.',it.watch);
+    else message('Live now',sc||'This match streams on the official broadcaster.',it.watch);
   }
 
   function play(url){
@@ -248,7 +209,7 @@ ul{list-style:none;padding:0;display:flex;flex-direction:column;gap:8px}
       });
       hls.on(Hls.Events.ERROR,function(_,d){
         if(!d.fatal)return;
-        if(d.type===Hls.ErrorTypes.NETWORK_ERROR){message('Stream unavailable','The stream could not be loaded. It may be offline or blocked. Check the URL and try again.',state.current&&state.current.watch);hls.destroy();state.hls=null;}
+        if(d.type===Hls.ErrorTypes.NETWORK_ERROR){message('Stream unavailable','The stream could not be loaded. It may be offline or blocked.',state.current&&state.current.watch);hls.destroy();state.hls=null;}
         else if(d.type===Hls.ErrorTypes.MEDIA_ERROR){hls.recoverMediaError();}
         else{message('Playback failed','Something went wrong while playing this stream.');hls.destroy();state.hls=null;}
       });
@@ -274,30 +235,24 @@ ul{list-style:none;padding:0;display:flex;flex-direction:column;gap:8px}
     });
   });
 
-  /* ---- live feed (optional; silently skipped when /api/matches is unavailable) ---- */
-  function loadApi(){
-    return fetch('/api/matches',{cache:'no-cache'})
-      .then(function(r){return r.ok?r.json():null;})
-      .then(function(d){state.api=(d&&d.matches)||[];})
-      .catch(function(){state.api=[];});
-  }
   function refresh(){
-    loadApi().then(function(){
-      build();render();
+    B.loadData().then(function(d){
+      state.items=d.items;render();
       if(state.current){
-        var cur=state.items.filter(function(i){return i.id===state.current.id;})[0];
-        if(cur){state.current=cur;nowS.textContent=nowLine(cur);}
+        var cur=d.items.filter(function(i){return i.id===state.current.id;})[0];
+        if(cur){
+          var changed=(cur.embed||cur.url)!==(state.current.embed||state.current.url);
+          state.current=cur;nowS.textContent=nowLine(cur);
+          if(changed)select(cur);
+        }
       }
-    });
+    }).catch(function(){});
   }
 
-  fetch('streams.json',{cache:'no-cache'}).then(function(r){return r.json();}).then(function(d){
+  B.loadData().then(function(d){
     if(d.siteName){document.getElementById('site').textContent=d.siteName;document.title=d.siteName+' – Cricket video player';}
-    state.manual=d.items||[];
-    return loadApi();
-  }).then(function(){
-    build();
-    var all=sorted();
+    state.items=d.items;
+    var all=B.sorted(state.items);
     var pick=all.filter(function(i){return i._s==='live';})[0]||all.filter(function(i){return i._s==='upcoming';})[0]||all[0];
     if(pick)select(pick);else render();
     setInterval(refresh,120000);
