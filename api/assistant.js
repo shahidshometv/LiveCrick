@@ -113,7 +113,7 @@ function sameChannel(a, b) {
 
 async function findLinks(match, apiKey) {
   const details = [
-    'Viewing country: India',
+    'Viewing region: worldwide; identify the countries or regions where each result is free',
     'Match: ' + text(match.title, 180),
     'Series: ' + text(match.series, 180),
     'Venue: ' + text(match.venue, 180),
@@ -121,16 +121,16 @@ async function findLinks(match, apiKey) {
     'Date: ' + text(match.dateLabel, 80)
   ].filter(function (line) { return !line.endsWith(': '); }).join('\n');
   const system = [
-    'You search the live web for official cricket streams and full-match replays available in India.',
-    'Search official cricket board, tournament organizer, and broadcast-rights-holder sources, including official YouTube channels and official broadcaster watch pages.',
-    'Include both free-to-watch options (including free-with-account) and paid/subscription options, and label access clearly. Do not include unofficial uploads, clips/highlights, mirrors, pirated streams, or links whose official status cannot be substantiated.',
-    'Return as many distinct qualifying results as you can substantiate, up to 12. Prefer direct official watch pages over homepages. Do not claim the list is exhaustive. If the access cost or regional availability cannot be confirmed from an official source, do not include that result.',
-    'Reply with a single JSON object and no markdown: {"reply":"brief scope/availability caveat","links":[{"title":"video or stream title","url":"https://official-source.example/watch","publisher":"official channel or broadcaster name","access":"free|free-with-account|paid","evidenceUrl":"https://official-source.example/event","note":"access requirements and India availability"}]}.',
-    'Each evidenceUrl must be an HTTPS page from the same official site or its subdomain and support the official status and access label. Never invent URLs, evidence, publishers, or availability. If nothing qualifies, return an empty links array.'
+    'You search the live web for official cricket streams and full-match replays that are free in at least one country or region worldwide.',
+    'Search broadly across official cricket board, tournament organizer, and broadcast-rights-holder sources, including official YouTube channels and official broadcaster watch pages in different countries.',
+    'Only return live streams or full-match replays that an official source presents as free to watch, including free-with-account options. Do not include unofficial uploads, clips/highlights, mirrors, pirated streams, or paid/subscription-only options.',
+    'Return as many distinct qualifying results as you can substantiate, up to 12. Prefer direct official watch pages over homepages. Do not claim the list is exhaustive. Include the countries or regions where each result is free, plus any account or other access requirements. If official evidence does not establish that the stream is free and where it is available, do not include it.',
+    'Reply with a single JSON object and no markdown: {"reply":"brief scope and regional-availability caveat","links":[{"title":"video or stream title","url":"https://official-source.example/watch","publisher":"official channel or broadcaster name","access":"free|free-with-account","evidenceUrl":"https://official-source.example/event","note":"countries/regions where free and any access requirements"}]}.',
+    'Each evidenceUrl must be an HTTPS page from the same official site or its subdomain and support the official status, free access, and stated region. Never invent URLs, evidence, publishers, or availability. If nothing qualifies, return an empty links array.'
   ].join(' ');
   const content = await groq([
     { role: 'system', content: system },
-    { role: 'user', content: details + '\nFind official live-stream or full-match replay pages available in India, including both free and paid options. Search beyond YouTube.' }
+    { role: 'user', content: details + '\nFind official free live-stream or full-match replay pages available anywhere worldwide. Search beyond YouTube and identify regional limits.' }
   ], apiKey, true);
   const result = parseResult(content);
   if (!result || !Array.isArray(result.links)) throw new Error('Assistant returned an unreadable search result');
@@ -142,7 +142,7 @@ async function findLinks(match, apiKey) {
     const evidenceUrl = httpsPage(text(link.evidenceUrl, 500));
     const publisher = text(link.publisher || link.channel, 160);
     const access = text(link.access, 32).toLowerCase();
-    if (!evidenceUrl || !publisher || !['free', 'free-with-account', 'paid'].includes(access)) return null;
+    if (!evidenceUrl || !publisher || !['free', 'free-with-account'].includes(access)) return null;
 
     const url = youtubeVideo(rawUrl);
     if (url) {
@@ -157,7 +157,7 @@ async function findLinks(match, apiKey) {
           note: text(link.note, 300),
           status: 'playable',
           access: access,
-          free: access !== 'paid'
+          free: true
         };
       } catch (e) {
         return { checkFailed: true };
@@ -176,7 +176,7 @@ async function findLinks(match, apiKey) {
       note: text(link.note, 300),
       status: 'official-page',
       access: access,
-      free: access !== 'paid'
+      free: true
     };
   }));
   const verificationFailures = checked.filter(function (item) { return item && item.checkFailed; }).length;
