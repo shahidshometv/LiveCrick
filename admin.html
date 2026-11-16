@@ -50,6 +50,7 @@ ul{list-style:none;padding:0;display:flex;flex-direction:column;gap:10px}
 textarea{width:100%;min-height:64px;background:var(--stand);border:1px solid var(--line);border-radius:4px;padding:8px 10px;resize:vertical}
 .chatrow{display:flex;gap:8px;align-items:flex-end}
 .chatrow textarea{flex:1}
+.chk{color:var(--mute);font-size:.85rem}.chk.ok{color:var(--pitch)}.chk.bad{color:#ff8a96}
 </style>
 </head>
 <body>
@@ -100,6 +101,16 @@ textarea{width:100%;min-height:64px;background:var(--stand);border:1px solid var
   function ask(body){
     return fetch('/api/assistant',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+pw},body:JSON.stringify(body)})
       .then(function(r){return r.json().catch(function(){return {};}).then(function(d){return {ok:r.ok,d:d};});});
+  }
+  function checkLink(url,el){
+    fetch('/api/check-link',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+pw},body:JSON.stringify({url:url})})
+      .then(function(r){return r.json().catch(function(){return {};});})
+      .then(function(d){
+        var label={playable:'Playable',maybe:'',"maybe-embed":'Loads, playback not confirmed','blocked-embed':'Blocked from embedding','login-required':'Login needed','paywall-hint':'Looks paid','broken':'Broken link',unreachable:'Unreachable','bad-url':'Invalid link'}[d.status]||d.status||'Unknown';
+        var free=d.free===true?' · Free':d.free===false?' · Not free':' · Free status unknown';
+        el.textContent=label+free+(d.detail?' – '+d.detail:'');
+        el.className='chk '+(d.status==='playable'?'ok':(d.status==='maybe-embed'?'':'bad'));
+      }).catch(function(){el.textContent='Check failed';});
   }
   function unlock(){
     loginEl.classList.add('hidden');panel.classList.remove('hidden');
@@ -163,7 +174,9 @@ textarea{width:100%;min-height:64px;background:var(--stand);border:1px solid var
             var nt=document.createElement('span');nt.textContent=l.note;
             var use=document.createElement('button');use.type='button';use.className='btn';use.textContent='Use this';
             use.addEventListener('click',function(){inp.value=l.url;send(l.url);});
-            c.appendChild(a);c.appendChild(nt);c.appendChild(use);cands.appendChild(c);
+            var st=document.createElement('span');st.className='chk';st.textContent='Checking...';
+            c.appendChild(a);c.appendChild(nt);c.appendChild(st);c.appendChild(use);cands.appendChild(c);
+            checkLink(l.url,st);
           });
           if(!(r.d.links||[]).length){var e=document.createElement('div');e.textContent='No verified links found.';cands.appendChild(e);}
         }).catch(function(){findBtn.disabled=false;cands.textContent='Network error';});
