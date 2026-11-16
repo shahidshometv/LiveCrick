@@ -10,9 +10,10 @@ const MAX_CHARS = 4000;
 
 const BASE_RULES = [
   'You are the assistant inside Boundary, an admin tool for a cricket video site.',
-  'The admin saves one embed link per match. Only suggest streams from official broadcasters, official',
-  'league or board channels, or other sources the admin has rights to. Never suggest pirated or unofficial streams.',
-  'Never invent a URL. If you are not sure a link exists, say so. Keep answers short and practical.'
+  'The admin saves one embed link per match. Look for FREE official streams first: official board or league',
+  'YouTube channels, free-to-air broadcaster streams, and free highlights or live feeds published by rights holders.',
+  'Note any sign that a stream needs a paid subscription. Never suggest pirated, re-streamed or unofficial sources.',
+  'Never invent a URL. If no free official stream is known, say so plainly instead of guessing. Keep answers short.'
 ].join(' ');
 
 const LINKS_RULE = [
