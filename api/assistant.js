@@ -121,16 +121,16 @@ async function findLinks(match, apiKey) {
     'Date: ' + text(match.dateLabel, 80)
   ].filter(function (line) { return !line.endsWith(': '); }).join('\n');
   const system = [
-    'You search the live web for lawful cricket streams that are free to watch in India.',
+    'You search the live web for official cricket streams and full-match replays available in India.',
     'Search official cricket board, tournament organizer, and broadcast-rights-holder sources, including official YouTube channels and official broadcaster watch pages.',
-    'Only return live streams or full-match replays that an official source presents as free in India, including free-with-account options. Do not include unofficial uploads, clips/highlights, mirrors, pirated streams, paid/subscription-only options, or links whose official status and free access cannot be substantiated.',
-    'Return as many distinct qualifying results as you can substantiate, up to 12. Prefer direct official watch pages over homepages. Do not claim the list is exhaustive. State when free access, account requirements, or regional availability could not be confirmed.',
-    'Reply with a single JSON object and no markdown: {"reply":"brief scope/availability caveat","links":[{"title":"video or stream title","url":"https://official-source.example/watch","publisher":"official channel or broadcaster name","evidenceUrl":"https://official-source.example/event","note":"free access, account requirements, and India availability"}]}.',
-    'Each evidenceUrl must be an HTTPS page from the same official site or its subdomain and support the official status and free availability. Never invent URLs, evidence, publishers, or availability. If nothing qualifies, return an empty links array.'
+    'Include both free-to-watch options (including free-with-account) and paid/subscription options, and label access clearly. Do not include unofficial uploads, clips/highlights, mirrors, pirated streams, or links whose official status cannot be substantiated.',
+    'Return as many distinct qualifying results as you can substantiate, up to 12. Prefer direct official watch pages over homepages. Do not claim the list is exhaustive. If the access cost or regional availability cannot be confirmed from an official source, do not include that result.',
+    'Reply with a single JSON object and no markdown: {"reply":"brief scope/availability caveat","links":[{"title":"video or stream title","url":"https://official-source.example/watch","publisher":"official channel or broadcaster name","access":"free|free-with-account|paid","evidenceUrl":"https://official-source.example/event","note":"access requirements and India availability"}]}.',
+    'Each evidenceUrl must be an HTTPS page from the same official site or its subdomain and support the official status and access label. Never invent URLs, evidence, publishers, or availability. If nothing qualifies, return an empty links array.'
   ].join(' ');
   const content = await groq([
     { role: 'system', content: system },
-    { role: 'user', content: details + '\nFind official free live-stream or full-match replay pages available in India. Search beyond YouTube.' }
+    { role: 'user', content: details + '\nFind official live-stream or full-match replay pages available in India, including both free and paid options. Search beyond YouTube.' }
   ], apiKey, true);
   const result = parseResult(content);
   if (!result || !Array.isArray(result.links)) throw new Error('Assistant returned an unreadable search result');
@@ -141,7 +141,8 @@ async function findLinks(match, apiKey) {
     const rawUrl = text(link.url, 500);
     const evidenceUrl = httpsPage(text(link.evidenceUrl, 500));
     const publisher = text(link.publisher || link.channel, 160);
-    if (!evidenceUrl || !publisher) return null;
+    const access = text(link.access, 32).toLowerCase();
+    if (!evidenceUrl || !publisher || !['free', 'free-with-account', 'paid'].includes(access)) return null;
 
     const url = youtubeVideo(rawUrl);
     if (url) {
@@ -155,7 +156,8 @@ async function findLinks(match, apiKey) {
           evidenceUrl: evidenceUrl,
           note: text(link.note, 300),
           status: 'playable',
-          free: true
+          access: access,
+          free: access !== 'paid'
         };
       } catch (e) {
         return { checkFailed: true };
@@ -173,7 +175,8 @@ async function findLinks(match, apiKey) {
       evidenceUrl: evidenceUrl,
       note: text(link.note, 300),
       status: 'official-page',
-      free: true
+      access: access,
+      free: access !== 'paid'
     };
   }));
   const verificationFailures = checked.filter(function (item) { return item && item.checkFailed; }).length;

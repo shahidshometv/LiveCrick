@@ -73,7 +73,7 @@ textarea{width:100%;min-height:64px;background:var(--stand);border:1px solid var
 
     <section class="aibox" aria-label="Assistant">
       <h2>Assistant</h2>
-      <p class="hint">Searches for official free streams and full replays available in India, including broadcaster watch pages. Public YouTube videos are checked for embedding; open other official pages to confirm playback and access.</p>
+      <p class="hint">Searches for official free and paid streams and full replays available in India. Each result is labeled by access type. Public YouTube videos are checked for embedding; open other official pages to confirm playback and access.</p>
       <div class="log" id="log" role="log" aria-live="polite"></div>
       <div class="chatrow">
         <textarea id="chatIn" placeholder="e.g. Which official channels show the Australia v England ODIs?" aria-label="Message to assistant"></textarea>
@@ -147,7 +147,7 @@ textarea{width:100%;min-height:64px;background:var(--stand);border:1px solid var
       row.appendChild(inp);row.appendChild(save);row.appendChild(clr);
 
       var findRow=document.createElement('div');findRow.className='row find';
-      var findBtn=document.createElement('button');findBtn.type='button';findBtn.className='btn';findBtn.textContent='Find free playable links';
+      var findBtn=document.createElement('button');findBtn.type='button';findBtn.className='btn';findBtn.textContent='Find official watch links';
       var cands=document.createElement('div');cands.className='cands';
       findBtn.addEventListener('click',function(){
         findBtn.disabled=true;cands.textContent='Searching...';
@@ -159,7 +159,8 @@ textarea{width:100%;min-height:64px;background:var(--stand);border:1px solid var
           (r.d.links||[]).forEach(function(l){
             var c=document.createElement('div');c.className='cand';
             var a=document.createElement('a');a.href=l.url;a.target='_blank';a.rel='noopener noreferrer';a.textContent=l.title;
-            var nt=document.createElement('span');nt.textContent=' · '+l.channel+(l.status==='playable'?' · Public YouTube video; embed verified':' · Official watch page; open to check playback');
+            var accessLabel={free:'Free', 'free-with-account':'Free account required', paid:'Paid / subscription'};
+            var nt=document.createElement('span');nt.textContent=' · '+l.channel+' · '+(accessLabel[l.access]||'Access unconfirmed')+(l.status==='playable'?' · Public YouTube video; embed verified':' · Official watch page; open to check playback');
             var evidence=document.createElement('a');evidence.href=l.evidenceUrl;evidence.target='_blank';evidence.rel='noopener noreferrer';evidence.textContent='Official source';
             c.appendChild(a);c.appendChild(nt);
             if(l.note){var note=document.createElement('span');note.textContent=' · '+l.note;c.appendChild(note);}
@@ -172,7 +173,7 @@ textarea{width:100%;min-height:64px;background:var(--stand);border:1px solid var
             cands.appendChild(c);
           });
           if(r.d.verificationFailures){var warning=document.createElement('div');warning.textContent='Could not verify '+r.d.verificationFailures+' candidate link(s). Try searching again.';cands.appendChild(warning);}
-          if(!(r.d.links||[]).length&&!r.d.verificationFailures){var e=document.createElement('div');e.textContent='No official free stream or replay links could be verified for India.';cands.appendChild(e);}
+          if(!(r.d.links||[]).length&&!r.d.verificationFailures){var e=document.createElement('div');e.textContent='No official stream or replay links could be verified for India.';cands.appendChild(e);}
         }).catch(function(){findBtn.disabled=false;cands.textContent='Network error';});
       });
       findRow.appendChild(findBtn);
