@@ -144,7 +144,10 @@ module.exports = async function handler(req, res) {
     if (!category || category.length > 40) { res.status(400).json({ error: 'Category is required and must be under 40 characters' }); return; }
     let channelUrl;
     try { channelUrl = new URL(link); } catch (e) { res.status(400).json({ error: 'Enter a valid channel URL' }); return; }
-    if (channelUrl.protocol !== 'https:' || link.length > 500) { res.status(400).json({ error: 'Channel URL must start with https:// and be under 500 characters' }); return; }
+    if (!['http:', 'https:', 'rtsp:'].includes(channelUrl.protocol) || !channelUrl.hostname || channelUrl.username || channelUrl.password || link.length > 500) {
+      res.status(400).json({ error: 'Channel URL must use HTTP, HTTPS, or RTSP, have no embedded credentials, and be under 500 characters' });
+      return;
+    }
     try {
       const channels = await db.channelsAll();
       if (!input.id && channels.length >= 500) { res.status(400).json({ error: 'Too many channels. Remove some first.' }); return; }

@@ -150,9 +150,9 @@ ul{list-style:none;padding:0;display:flex;flex-direction:column;gap:8px}
     return state.currentChannel?{name:state.currentChannel.name,url:state.currentChannel.url}:null;
   }
 
-  function message(title,text,watch){
+  function message(title,text,watch,linkText){
     ovT.textContent=title;ovP.textContent=text;
-    if(watch&&watch.url){ovA.href=watch.url;ovA.textContent='Watch on '+watch.name;ovA.hidden=false;}else{ovA.hidden=true;}
+    if(watch&&watch.url){ovA.href=watch.url;ovA.textContent=linkText||'Watch on '+watch.name;ovA.hidden=false;}else{ovA.hidden=true;}
     overlay.classList.add('show');
   }
   function hideMessage(){overlay.classList.remove('show');}
@@ -257,6 +257,16 @@ ul{list-style:none;padding:0;display:flex;flex-direction:column;gap:8px}
     nowT.textContent=channel.name;
     nowS.textContent=channel.category;
     render();renderChannels();resetPlayers();
+    var protocol;
+    try{protocol=new URL(channel.url).protocol;}catch(e){protocol='';}
+    if(protocol==='rtsp:'){
+      message('RTSP source','Browsers cannot play RTSP directly. Add an HLS or WebRTC relay URL to preview this channel here.',activeWatch(),'Open RTSP source');
+      return;
+    }
+    if(protocol==='http:'){
+      message('HTTP source','This site uses HTTPS, so browsers may block insecure HTTP playback. Open the source in a new tab or use an HTTPS stream URL.',activeWatch(),'Open HTTP source');
+      return;
+    }
     var em=B.embedOf(channel.url);
     if(!em){message('Channel unavailable','This channel link could not be played.',{name:channel.name,url:channel.url});return;}
     hideMessage();

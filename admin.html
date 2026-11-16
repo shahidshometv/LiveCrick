@@ -75,7 +75,7 @@ textarea{width:100%;min-height:64px;background:var(--stand);border:1px solid var
 
     <section class="aibox" aria-label="Custom channels">
       <h2>Custom channels</h2>
-      <p class="hint">Add channels to public categories such as News, Religious, Sports, Kids, or Science. Use a YouTube link, direct HLS/MP4/WebM stream, or iframe-friendly HTTPS page. Only add streams you have the right to show.</p>
+      <p class="hint">Add channels to public categories such as News, Religious, Sports, Kids, or Science. HTTPS links can play in the browser where supported. HTTP and RTSP links are saved as external-only; RTSP needs an HLS/WebRTC relay to play on this site. Only add streams you have the right to show, and don't include credentials in URLs.</p>
       <div class="row">
         <input id="channelName" type="text" maxlength="100" placeholder="Channel name" aria-label="Channel name">
         <select id="channelCategory" aria-label="Channel category">
@@ -84,7 +84,7 @@ textarea{width:100%;min-height:64px;background:var(--stand);border:1px solid var
         </select>
       </div>
       <input id="customCategory" class="hidden" type="text" maxlength="40" placeholder="Custom category" aria-label="Custom category" style="margin-top:8px">
-      <input id="channelUrl" type="url" maxlength="500" placeholder="https://..." aria-label="Channel stream or player URL" style="margin-top:8px">
+      <input id="channelUrl" type="url" maxlength="500" placeholder="https://, http://, or rtsp://..." aria-label="Channel stream or player URL" style="margin-top:8px">
       <div class="row" style="margin-top:8px">
         <button class="btn pri" id="saveChannel" type="button">Add channel</button>
         <button class="btn hidden" id="cancelChannelEdit" type="button">Cancel edit</button>
@@ -193,7 +193,7 @@ textarea{width:100%;min-height:64px;background:var(--stand);border:1px solid var
     try{parsed=new URL(url);}catch(e){parsed=null;}
     if(!name||name.length>100){channelMsg.className='msg err';channelMsg.textContent='Enter a channel name (up to 100 characters).';return;}
     if(!category||category.length>40){channelMsg.className='msg err';channelMsg.textContent='Enter a category (up to 40 characters).';return;}
-    if(!parsed||parsed.protocol!=='https:'||url.length>500){channelMsg.className='msg err';channelMsg.textContent='Enter a valid HTTPS channel URL under 500 characters.';return;}
+    if(!parsed||['http:','https:','rtsp:'].indexOf(parsed.protocol)===-1||!parsed.hostname||parsed.username||parsed.password||url.length>500){channelMsg.className='msg err';channelMsg.textContent='Enter an HTTP, HTTPS, or RTSP URL with no embedded credentials, under 500 characters.';return;}
     saveChannel.disabled=true;channelMsg.className='msg';channelMsg.textContent='Saving...';
     call({action:'saveChannel',channel:{id:editingChannelId||undefined,name:name,category:category,url:url}}).then(function(r){
       saveChannel.disabled=false;
