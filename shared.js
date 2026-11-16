@@ -80,9 +80,13 @@
     return Promise.all([
       fetch('streams.json', { cache: 'no-cache' }).then(function (r) { return r.json(); }),
       j('/api/matches', { matches: [] }),
-      j('/api/embeds', { embeds: {} })
+      j('/api/embeds', { embeds: {}, channels: [] })
     ]).then(function (r) {
-      return { siteName: r[0].siteName, items: B.build(r[0].items || [], r[1].matches || [], r[2].embeds || {}) };
+      return {
+        siteName: r[0].siteName,
+        items: B.build(r[0].items || [], r[1].matches || [], r[2].embeds || {}),
+        channels: Array.isArray(r[2].channels) ? r[2].channels : []
+      };
     });
   };
 

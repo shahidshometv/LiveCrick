@@ -13,7 +13,7 @@
 --display:"Barlow Condensed","Arial Narrow",sans-serif;--body:"Source Sans 3",system-ui,sans-serif}
 *{box-sizing:border-box;margin:0}
 body{background:var(--night);color:var(--light);font-family:var(--body);line-height:1.5;min-height:100vh}
-button,input{font:inherit;color:inherit}
+button,input,select{font:inherit;color:inherit}
 :focus-visible{outline:2px solid var(--pitch);outline-offset:2px}
 header{display:flex;align-items:baseline;gap:14px;padding:16px clamp(16px,3vw,32px);border-bottom:1px solid var(--line)}
 header h1{font-family:var(--display);font-weight:700;font-size:2rem}
@@ -21,11 +21,11 @@ header a{color:var(--mute);margin-left:auto}
 main{max-width:900px;margin:0 auto;padding:24px clamp(16px,3vw,32px)}
 h2{font-family:var(--display);font-weight:500;font-size:1.4rem;margin-bottom:8px}
 p.hint{color:var(--mute);margin-bottom:16px}
-input[type=password],input[type=url],input[type=search]{width:100%;background:var(--stand);border:1px solid var(--line);border-radius:4px;padding:8px 10px}
+input[type=password],input[type=url],input[type=search],input[type=text],select{width:100%;background:var(--stand);border:1px solid var(--line);border-radius:4px;padding:8px 10px}
 .btn{background:var(--stand);border:1px solid var(--line);border-radius:4px;padding:7px 14px;cursor:pointer}
 .btn:hover{border-color:var(--pitch)}
 .btn.pri{background:var(--pitch);border-color:var(--pitch);color:#07120b;font-weight:600}
-.row{display:flex;gap:8px}
+.row{display:flex;gap:8px;flex-wrap:wrap}
 .login{max-width:420px}
 .msg{margin-top:8px;min-height:1.4em;color:var(--mute)}
 .msg.err{color:#ff8a96}.msg.ok{color:var(--pitch)}
@@ -37,6 +37,8 @@ ul{list-style:none;padding:0;display:flex;flex-direction:column;gap:10px}
 .card .t{font-weight:600}
 .card .m{color:var(--mute);font-size:.9rem;margin-bottom:8px}
 .card .has{color:var(--pitch);font-weight:600}
+.channel-url{color:var(--mute);word-break:break-all;font-size:.9rem}
+#channelName{flex:1}
 .hidden{display:none}
 .find{margin-top:10px}
 .cands{margin-top:10px;display:flex;flex-direction:column;gap:6px}
@@ -71,6 +73,26 @@ textarea{width:100%;min-height:64px;background:var(--stand);border:1px solid var
     <div class="tools"><input id="q" type="search" placeholder="Filter matches" aria-label="Filter matches"></div>
     <ul id="list"></ul>
 
+    <section class="aibox" aria-label="Custom channels">
+      <h2>Custom channels</h2>
+      <p class="hint">Add channels to public categories such as News, Religious, Sports, Kids, or Science. Use a YouTube link, direct HLS/MP4/WebM stream, or iframe-friendly HTTPS page. Only add streams you have the right to show.</p>
+      <div class="row">
+        <input id="channelName" type="text" maxlength="100" placeholder="Channel name" aria-label="Channel name">
+        <select id="channelCategory" aria-label="Channel category">
+          <option>News</option><option>Religious</option><option>Sports</option><option>Kids</option>
+          <option>Science</option><option>Entertainment</option><option>Music</option><option>Education</option><option value="__custom__">Other...</option>
+        </select>
+      </div>
+      <input id="customCategory" class="hidden" type="text" maxlength="40" placeholder="Custom category" aria-label="Custom category" style="margin-top:8px">
+      <input id="channelUrl" type="url" maxlength="500" placeholder="https://..." aria-label="Channel stream or player URL" style="margin-top:8px">
+      <div class="row" style="margin-top:8px">
+        <button class="btn pri" id="saveChannel" type="button">Add channel</button>
+        <button class="btn hidden" id="cancelChannelEdit" type="button">Cancel edit</button>
+      </div>
+      <div class="msg" id="channelMsg" role="status"></div>
+      <ul id="channelList"></ul>
+    </section>
+
     <section class="aibox" aria-label="Assistant">
       <h2>Assistant</h2>
       <p class="hint">Searches worldwide for official free streams and full replays, including free-with-account options. Results include regional availability notes and are not exhaustive. Public YouTube videos are checked for embedding; open other official pages to confirm playback and access.</p>
@@ -91,7 +113,11 @@ textarea{width:100%;min-height:64px;background:var(--stand);border:1px solid var
   try{pw=sessionStorage.getItem('boundary:pw')||'';}catch(e){}
   var loginEl=document.getElementById('login'), panel=document.getElementById('panel');
   var pwEl=document.getElementById('pw'), loginMsg=document.getElementById('loginMsg'), list=document.getElementById('list'), q=document.getElementById('q');
-  var items=[];
+  var items=[], channels=[], editingChannelId='';
+  var channelName=document.getElementById('channelName'), channelCategory=document.getElementById('channelCategory');
+  var customCategory=document.getElementById('customCategory'), channelUrl=document.getElementById('channelUrl');
+  var channelMsg=document.getElementById('channelMsg'), channelList=document.getElementById('channelList');
+  var saveChannel=document.getElementById('saveChannel'), cancelChannelEdit=document.getElementById('cancelChannelEdit');
 
   function call(body){
     return fetch('/api/embeds',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+pw},body:JSON.stringify(body)})
@@ -103,7 +129,7 @@ textarea{width:100%;min-height:64px;background:var(--stand);border:1px solid var
   }
   function unlock(){
     loginEl.classList.add('hidden');panel.classList.remove('hidden');
-    B.loadData().then(function(d){items=B.sorted(d.items);draw();}).catch(function(){list.textContent='Could not load matches.';});
+    B.loadData().then(function(d){items=B.sorted(d.items);channels=d.channels;draw();drawChannels();}).catch(function(){list.textContent='Could not load matches.';});
   }
   function login(){
     pw=pwEl.value||pw;
@@ -116,6 +142,67 @@ textarea{width:100%;min-height:64px;background:var(--stand);border:1px solid var
   document.getElementById('go').addEventListener('click',login);
   pwEl.addEventListener('keydown',function(e){if(e.key==='Enter')login();});
   q.addEventListener('input',draw);
+
+  function drawChannels(){
+    channelList.textContent='';
+    channels.slice().sort(function(a,b){return a.category.localeCompare(b.category)||a.name.localeCompare(b.name);}).forEach(function(channel){
+      var li=document.createElement('li');li.className='card';
+      var title=document.createElement('div');title.className='t';title.textContent=channel.name+' · '+channel.category;
+      var url=document.createElement('div');url.className='channel-url';url.textContent=channel.url;
+      var actions=document.createElement('div');actions.className='row';actions.style.marginTop='8px';
+      var edit=document.createElement('button');edit.type='button';edit.className='btn';edit.textContent='Edit';
+      edit.addEventListener('click',function(){
+        editingChannelId=channel.id;channelName.value=channel.name;channelUrl.value=channel.url;
+        var known=Array.prototype.some.call(channelCategory.options,function(option){return option.value===channel.category;});
+        channelCategory.value=known?channel.category:'__custom__';
+        customCategory.value=known?'':channel.category;customCategory.classList.toggle('hidden',known);
+        saveChannel.textContent='Save changes';cancelChannelEdit.classList.remove('hidden');
+        channelMsg.className='msg';channelMsg.textContent='Editing '+channel.name;
+        channelName.focus();
+      });
+      var remove=document.createElement('button');remove.type='button';remove.className='btn';remove.textContent='Delete';
+      remove.addEventListener('click',function(){
+        if(!window.confirm('Delete '+channel.name+'?'))return;
+        remove.disabled=true;
+        call({action:'deleteChannel',id:channel.id}).then(function(r){
+          if(!r.ok){remove.disabled=false;channelMsg.className='msg err';channelMsg.textContent=r.d.error||'Could not delete channel';return;}
+          channels=channels.filter(function(item){return item.id!==channel.id;});drawChannels();
+          channelMsg.className='msg ok';channelMsg.textContent='Channel deleted.';
+          if(editingChannelId===channel.id)resetChannelForm();
+        }).catch(function(){remove.disabled=false;channelMsg.className='msg err';channelMsg.textContent='Network error';});
+      });
+      actions.appendChild(edit);actions.appendChild(remove);
+      li.appendChild(title);li.appendChild(url);li.appendChild(actions);channelList.appendChild(li);
+    });
+    if(!channelList.children.length){var empty=document.createElement('li');empty.className='hint';empty.textContent='No custom channels added yet.';channelList.appendChild(empty);}
+  }
+
+  function resetChannelForm(){
+    editingChannelId='';channelName.value='';channelCategory.value='News';customCategory.value='';
+    customCategory.classList.add('hidden');channelUrl.value='';saveChannel.textContent='Add channel';
+    cancelChannelEdit.classList.add('hidden');
+  }
+  channelCategory.addEventListener('change',function(){
+    customCategory.classList.toggle('hidden',channelCategory.value!=='__custom__');
+    if(channelCategory.value==='__custom__')customCategory.focus();
+  });
+  cancelChannelEdit.addEventListener('click',function(){resetChannelForm();channelMsg.textContent='';});
+  saveChannel.addEventListener('click',function(){
+    var name=channelName.value.trim(), category=channelCategory.value==='__custom__'?customCategory.value.trim():channelCategory.value;
+    var url=channelUrl.value.trim(), parsed;
+    try{parsed=new URL(url);}catch(e){parsed=null;}
+    if(!name||name.length>100){channelMsg.className='msg err';channelMsg.textContent='Enter a channel name (up to 100 characters).';return;}
+    if(!category||category.length>40){channelMsg.className='msg err';channelMsg.textContent='Enter a category (up to 40 characters).';return;}
+    if(!parsed||parsed.protocol!=='https:'||url.length>500){channelMsg.className='msg err';channelMsg.textContent='Enter a valid HTTPS channel URL under 500 characters.';return;}
+    saveChannel.disabled=true;channelMsg.className='msg';channelMsg.textContent='Saving...';
+    call({action:'saveChannel',channel:{id:editingChannelId||undefined,name:name,category:category,url:url}}).then(function(r){
+      saveChannel.disabled=false;
+      if(!r.ok){channelMsg.className='msg err';channelMsg.textContent=r.d.error||'Could not save channel';return;}
+      var saved=r.d.channel,index=channels.findIndex(function(item){return item.id===saved.id;});
+      if(index<0)channels.push(saved);else channels[index]=saved;
+      drawChannels();resetChannelForm();channelMsg.className='msg ok';channelMsg.textContent='Channel saved.';
+    }).catch(function(){saveChannel.disabled=false;channelMsg.className='msg err';channelMsg.textContent='Network error';});
+  });
 
   function draw(){
     var term=q.value.trim().toLowerCase();
