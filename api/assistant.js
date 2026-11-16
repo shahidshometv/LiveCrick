@@ -39,6 +39,19 @@ function youtubeVideo(url) {
   return /^[\w-]{6,}$/.test(id) ? 'https://www.youtube.com/watch?v=' + id : null;
 }
 
+function httpsPage(url) {
+  let u;
+  try { u = new URL(url); } catch (e) { return null; }
+  if (u.protocol !== 'https:' || !u.hostname || u.username || u.password) return null;
+  return u.href;
+}
+
+function relatedHosts(a, b) {
+  const normalize = function (host) { return host.toLowerCase().replace(/^www\./, ''); };
+  const x = normalize(a), y = normalize(b);
+  return x === y || x.endsWith('.' + y) || y.endsWith('.' + x);
+}
+
 function parseResult(content) {
   const match = String(content || '').match(/\{[\s\S]*\}/);
   if (!match) return null;
@@ -100,6 +113,7 @@ function sameChannel(a, b) {
 
 async function findLinks(match, apiKey) {
   const details = [
+    'Viewing country: India',
     'Match: ' + text(match.title, 180),
     'Series: ' + text(match.series, 180),
     'Venue: ' + text(match.venue, 180),
@@ -107,16 +121,16 @@ async function findLinks(match, apiKey) {
     'Date: ' + text(match.dateLabel, 80)
   ].filter(function (line) { return !line.endsWith(': '); }).join('\n');
   const system = [
-    'You search the live web for lawful, free-to-view cricket streams.',
-    'Search official cricket board, tournament organizer, or broadcaster sources and their official YouTube channels.',
-    'Only return public YouTube video URLs for live streams or full replays that are presented as free to watch. Do not include unofficial uploads, clips/highlights, mirrors, paid/subscription-only streams, or links whose source cannot be substantiated.',
-    'Return as many distinct qualifying results as you can substantiate, up to 12. Do not claim the list is exhaustive. Regional availability can differ.',
-    'Reply with a single JSON object and no markdown: {"reply":"brief scope/availability caveat","links":[{"title":"video title","url":"https://www.youtube.com/watch?v=...","channel":"official channel name","evidenceUrl":"https://official-source.example/...","note":"why this is relevant and any region restriction"}]}.',
-    'Each evidenceUrl must be an HTTPS page that supports the official status or free availability. Never invent URLs, evidence, channels, or availability. If nothing qualifies, return an empty links array.'
+    'You search the live web for lawful cricket streams that are free to watch in India.',
+    'Search official cricket board, tournament organizer, and broadcast-rights-holder sources, including official YouTube channels and official broadcaster watch pages.',
+    'Only return live streams or full-match replays that an official source presents as free in India, including free-with-account options. Do not include unofficial uploads, clips/highlights, mirrors, pirated streams, paid/subscription-only options, or links whose official status and free access cannot be substantiated.',
+    'Return as many distinct qualifying results as you can substantiate, up to 12. Prefer direct official watch pages over homepages. Do not claim the list is exhaustive. State when free access, account requirements, or regional availability could not be confirmed.',
+    'Reply with a single JSON object and no markdown: {"reply":"brief scope/availability caveat","links":[{"title":"video or stream title","url":"https://official-source.example/watch","publisher":"official channel or broadcaster name","evidenceUrl":"https://official-source.example/event","note":"free access, account requirements, and India availability"}]}.',
+    'Each evidenceUrl must be an HTTPS page from the same official site or its subdomain and support the official status and free availability. Never invent URLs, evidence, publishers, or availability. If nothing qualifies, return an empty links array.'
   ].join(' ');
   const content = await groq([
     { role: 'system', content: system },
-    { role: 'user', content: details + '\nFind free official live streams or full-match replays.' }
+    { role: 'user', content: details + '\nFind official free live-stream or full-match replay pages available in India. Search beyond YouTube.' }
   ], apiKey, true);
   const result = parseResult(content);
   if (!result || !Array.isArray(result.links)) throw new Error('Assistant returned an unreadable search result');
@@ -124,26 +138,43 @@ async function findLinks(match, apiKey) {
   const candidates = result.links.slice(0, MAX_LINKS);
   const checked = await Promise.all(candidates.map(async function (link) {
     if (!link || typeof link !== 'object') return null;
-    const url = youtubeVideo(text(link.url, 500));
-    const channel = text(link.channel, 160);
-    let evidence;
-    try { evidence = new URL(text(link.evidenceUrl, 500)); } catch (e) { return null; }
-    if (!url || !channel || evidence.protocol !== 'https:') return null;
-    try {
-      const video = await verifyPublicVideo(url);
-      if (!video || !sameChannel(channel, video.channel)) return null;
-      return {
-        title: video.title,
-        url: url,
-        channel: video.channel,
-        evidenceUrl: evidence.href,
-        note: text(link.note, 300),
-        status: 'playable',
-        free: true
-      };
-    } catch (e) {
-      return { checkFailed: true };
+    const rawUrl = text(link.url, 500);
+    const evidenceUrl = httpsPage(text(link.evidenceUrl, 500));
+    const publisher = text(link.publisher || link.channel, 160);
+    if (!evidenceUrl || !publisher) return null;
+
+    const url = youtubeVideo(rawUrl);
+    if (url) {
+      try {
+        const video = await verifyPublicVideo(url);
+        if (!video || !sameChannel(publisher, video.channel)) return null;
+        return {
+          title: video.title,
+          url: url,
+          channel: video.channel,
+          evidenceUrl: evidenceUrl,
+          note: text(link.note, 300),
+          status: 'playable',
+          free: true
+        };
+      } catch (e) {
+        return { checkFailed: true };
+      }
     }
+
+    const pageUrl = httpsPage(rawUrl);
+    if (!pageUrl) return null;
+    const page = new URL(pageUrl), evidence = new URL(evidenceUrl);
+    if (!relatedHosts(page.hostname, evidence.hostname)) return null;
+    return {
+      title: text(link.title, 200) || publisher + ' official watch page',
+      url: pageUrl,
+      channel: publisher,
+      evidenceUrl: evidenceUrl,
+      note: text(link.note, 300),
+      status: 'official-page',
+      free: true
+    };
   }));
   const verificationFailures = checked.filter(function (item) { return item && item.checkFailed; }).length;
   return {

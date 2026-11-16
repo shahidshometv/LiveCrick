@@ -73,7 +73,7 @@ textarea{width:100%;min-height:64px;background:var(--stand);border:1px solid var
 
     <section class="aibox" aria-label="Assistant">
       <h2>Assistant</h2>
-      <p class="hint">Searches the web for official free streams and full replays. Only public, embeddable YouTube videos are shown; availability can vary by region, and results are not exhaustive.</p>
+      <p class="hint">Searches for official free streams and full replays available in India, including broadcaster watch pages. Public YouTube videos are checked for embedding; open other official pages to confirm playback and access.</p>
       <div class="log" id="log" role="log" aria-live="polite"></div>
       <div class="chatrow">
         <textarea id="chatIn" placeholder="e.g. Which official channels show the Australia v England ODIs?" aria-label="Message to assistant"></textarea>
@@ -159,16 +159,20 @@ textarea{width:100%;min-height:64px;background:var(--stand);border:1px solid var
           (r.d.links||[]).forEach(function(l){
             var c=document.createElement('div');c.className='cand';
             var a=document.createElement('a');a.href=l.url;a.target='_blank';a.rel='noopener noreferrer';a.textContent=l.title;
-            var nt=document.createElement('span');nt.textContent=' · '+l.channel+' · Free and playable';
+            var nt=document.createElement('span');nt.textContent=' · '+l.channel+(l.status==='playable'?' · Public YouTube video; embed verified':' · Official watch page; open to check playback');
             var evidence=document.createElement('a');evidence.href=l.evidenceUrl;evidence.target='_blank';evidence.rel='noopener noreferrer';evidence.textContent='Official source';
-            var use=document.createElement('button');use.type='button';use.className='btn';use.textContent='Use this';
-            use.addEventListener('click',function(){inp.value=l.url;send(l.url);});
             c.appendChild(a);c.appendChild(nt);
             if(l.note){var note=document.createElement('span');note.textContent=' · '+l.note;c.appendChild(note);}
-            c.appendChild(evidence);c.appendChild(use);cands.appendChild(c);
+            c.appendChild(evidence);
+            if(l.status==='playable'){
+              var use=document.createElement('button');use.type='button';use.className='btn';use.textContent='Use this';
+              use.addEventListener('click',function(){inp.value=l.url;send(l.url);});
+              c.appendChild(use);
+            }
+            cands.appendChild(c);
           });
           if(r.d.verificationFailures){var warning=document.createElement('div');warning.textContent='Could not verify '+r.d.verificationFailures+' candidate link(s). Try searching again.';cands.appendChild(warning);}
-          if(!(r.d.links||[]).length&&!r.d.verificationFailures){var e=document.createElement('div');e.textContent='No free, playable official YouTube links could be verified.';cands.appendChild(e);}
+          if(!(r.d.links||[]).length&&!r.d.verificationFailures){var e=document.createElement('div');e.textContent='No official free stream or replay links could be verified for India.';cands.appendChild(e);}
         }).catch(function(){findBtn.disabled=false;cands.textContent='Network error';});
       });
       findRow.appendChild(findBtn);
