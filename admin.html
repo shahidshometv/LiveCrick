@@ -38,6 +38,18 @@ ul{list-style:none;padding:0;display:flex;flex-direction:column;gap:10px}
 .card .m{color:var(--mute);font-size:.9rem;margin-bottom:8px}
 .card .has{color:var(--pitch);font-weight:600}
 .hidden{display:none}
+.find{margin-top:10px}
+.cands{margin-top:10px;display:flex;flex-direction:column;gap:6px}
+.cand{display:flex;gap:8px;align-items:center;flex-wrap:wrap;color:var(--mute);font-size:.9rem}
+.cand a{color:var(--light);word-break:break-all}
+.aibox{margin-top:28px;border-top:1px solid var(--line);padding-top:20px}
+.log{background:var(--stand);border:1px solid var(--line);border-radius:4px;min-height:120px;max-height:360px;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:10px;margin-bottom:10px}
+.bubble{white-space:pre-wrap;max-width:90%}
+.bubble.u{align-self:flex-end;background:var(--night);border:1px solid var(--line);border-radius:6px;padding:6px 10px}
+.bubble.a{color:var(--light)}
+textarea{width:100%;min-height:64px;background:var(--stand);border:1px solid var(--line);border-radius:4px;padding:8px 10px;resize:vertical}
+.chatrow{display:flex;gap:8px;align-items:flex-end}
+.chatrow textarea{flex:1}
 </style>
 </head>
 <body>
@@ -58,6 +70,17 @@ ul{list-style:none;padding:0;display:flex;flex-direction:column;gap:10px}
     <p class="hint">Paste a link for any match and press Save. YouTube links (watch, live or youtu.be), direct .m3u8 / .mp4 links and iframe-friendly https pages all work. The player shows it straight away. Only add streams you have the right to show.</p>
     <div class="tools"><input id="q" type="search" placeholder="Filter matches" aria-label="Filter matches"></div>
     <ul id="list"></ul>
+
+    <section class="aibox" aria-label="Assistant">
+      <h2>Assistant</h2>
+      <p class="hint">Ask for help finding official stream links, checking match details, or writing notes. It runs on Groq and does not save anything by itself.</p>
+      <div class="log" id="log" role="log" aria-live="polite"></div>
+      <div class="chatrow">
+        <textarea id="chatIn" placeholder="e.g. Which official channels show the Australia v England ODIs?" aria-label="Message to assistant"></textarea>
+        <button class="btn pri" id="chatGo" type="button">Send</button>
+      </div>
+      <div class="msg" id="chatMsg" role="status"></div>
+    </section>
   </section>
 </main>
 
@@ -72,6 +95,10 @@ ul{list-style:none;padding:0;display:flex;flex-direction:column;gap:10px}
 
   function call(body){
     return fetch('/api/embeds',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+pw},body:JSON.stringify(body)})
+      .then(function(r){return r.json().catch(function(){return {};}).then(function(d){return {ok:r.ok,d:d};});});
+  }
+  function ask(body){
+    return fetch('/api/assistant',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+pw},body:JSON.stringify(body)})
       .then(function(r){return r.json().catch(function(){return {};}).then(function(d){return {ok:r.ok,d:d};});});
   }
   function unlock(){
@@ -118,11 +145,53 @@ ul{list-style:none;padding:0;display:flex;flex-direction:column;gap:10px}
       });
       clr.addEventListener('click',function(){send('');});
       row.appendChild(inp);row.appendChild(save);row.appendChild(clr);
-      li.appendChild(t);li.appendChild(m);li.appendChild(row);li.appendChild(msg);
+
+      var findRow=document.createElement('div');findRow.className='row find';
+      var findBtn=document.createElement('button');findBtn.type='button';findBtn.className='btn';findBtn.textContent='Find links with AI';
+      var cands=document.createElement('div');cands.className='cands';
+      findBtn.addEventListener('click',function(){
+        findBtn.disabled=true;cands.textContent='Searching...';
+        ask({mode:'links',match:{title:it.title,series:it.series,venue:it.venue,start:it.start,dateLabel:it.dateLabel},
+             messages:[{role:'user',content:'Find official live or upcoming stream links for this match.'}]})
+        .then(function(r){
+          findBtn.disabled=false;cands.textContent='';
+          if(!r.ok){cands.textContent=r.d.error||'Assistant failed';return;}
+          if(r.d.reply){var n=document.createElement('div');n.textContent=r.d.reply;cands.appendChild(n);}
+          (r.d.links||[]).forEach(function(l){
+            var c=document.createElement('div');c.className='cand';
+            var a=document.createElement('a');a.href=l.url;a.target='_blank';a.rel='noopener noreferrer';a.textContent=l.title;
+            var nt=document.createElement('span');nt.textContent=l.note;
+            var use=document.createElement('button');use.type='button';use.className='btn';use.textContent='Use this';
+            use.addEventListener('click',function(){inp.value=l.url;send(l.url);});
+            c.appendChild(a);c.appendChild(nt);c.appendChild(use);cands.appendChild(c);
+          });
+          if(!(r.d.links||[]).length){var e=document.createElement('div');e.textContent='No verified links found.';cands.appendChild(e);}
+        }).catch(function(){findBtn.disabled=false;cands.textContent='Network error';});
+      });
+      findRow.appendChild(findBtn);
+      li.appendChild(t);li.appendChild(m);li.appendChild(row);li.appendChild(findRow);li.appendChild(cands);li.appendChild(msg);
       list.appendChild(li);
     });
     if(!list.children.length){var e=document.createElement('li');e.className='hint';e.textContent='No matches found.';list.appendChild(e);}
   }
+
+  /* chat with the assistant */
+  var chat=[], log=document.getElementById('log'), chatIn=document.getElementById('chatIn'), chatMsg=document.getElementById('chatMsg');
+  function bubble(role,text){
+    var b=document.createElement('div');b.className='bubble '+(role==='user'?'u':'a');b.textContent=text;
+    log.appendChild(b);log.scrollTop=log.scrollHeight;
+  }
+  function sendChat(){
+    var text=chatIn.value.trim();if(!text)return;
+    chat.push({role:'user',content:text});bubble('user',text);chatIn.value='';
+    chatMsg.className='msg';chatMsg.textContent='Thinking...';
+    ask({mode:'chat',messages:chat}).then(function(r){
+      if(!r.ok){chatMsg.className='msg err';chatMsg.textContent=r.d.error||'Assistant failed';chat.pop();return;}
+      chatMsg.textContent='';chat.push({role:'assistant',content:r.d.reply||''});bubble('assistant',r.d.reply||'(empty reply)');
+    }).catch(function(){chatMsg.className='msg err';chatMsg.textContent='Network error';chat.pop();});
+  }
+  document.getElementById('chatGo').addEventListener('click',sendChat);
+  chatIn.addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendChat();}});
 
   if(pw){call({action:'login'}).then(function(r){if(r.ok)unlock();}).catch(function(){});}
 })();
