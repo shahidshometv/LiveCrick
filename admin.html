@@ -50,7 +50,6 @@ ul{list-style:none;padding:0;display:flex;flex-direction:column;gap:10px}
 textarea{width:100%;min-height:64px;background:var(--stand);border:1px solid var(--line);border-radius:4px;padding:8px 10px;resize:vertical}
 .chatrow{display:flex;gap:8px;align-items:flex-end}
 .chatrow textarea{flex:1}
-.chk{color:var(--mute);font-size:.85rem}.chk.ok{color:var(--pitch)}.chk.bad{color:#ff8a96}
 </style>
 </head>
 <body>
@@ -74,7 +73,7 @@ textarea{width:100%;min-height:64px;background:var(--stand);border:1px solid var
 
     <section class="aibox" aria-label="Assistant">
       <h2>Assistant</h2>
-      <p class="hint">Ask for help finding official stream links, checking match details, or writing notes. It runs on Groq and does not save anything by itself.</p>
+      <p class="hint">Searches the web for official free streams and full replays. Only public, embeddable YouTube videos are shown; availability can vary by region, and results are not exhaustive.</p>
       <div class="log" id="log" role="log" aria-live="polite"></div>
       <div class="chatrow">
         <textarea id="chatIn" placeholder="e.g. Which official channels show the Australia v England ODIs?" aria-label="Message to assistant"></textarea>
@@ -101,16 +100,6 @@ textarea{width:100%;min-height:64px;background:var(--stand);border:1px solid var
   function ask(body){
     return fetch('/api/assistant',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+pw},body:JSON.stringify(body)})
       .then(function(r){return r.json().catch(function(){return {};}).then(function(d){return {ok:r.ok,d:d};});});
-  }
-  function checkLink(url,el){
-    fetch('/api/check-link',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+pw},body:JSON.stringify({url:url})})
-      .then(function(r){return r.json().catch(function(){return {};});})
-      .then(function(d){
-        var label={playable:'Playable',maybe:'',"maybe-embed":'Loads, playback not confirmed','blocked-embed':'Blocked from embedding','login-required':'Login needed','paywall-hint':'Looks paid','broken':'Broken link',unreachable:'Unreachable','bad-url':'Invalid link'}[d.status]||d.status||'Unknown';
-        var free=d.free===true?' · Free':d.free===false?' · Not free':' · Free status unknown';
-        el.textContent=label+free+(d.detail?' – '+d.detail:'');
-        el.className='chk '+(d.status==='playable'?'ok':(d.status==='maybe-embed'?'':'bad'));
-      }).catch(function(){el.textContent='Check failed';});
   }
   function unlock(){
     loginEl.classList.add('hidden');panel.classList.remove('hidden');
@@ -158,12 +147,11 @@ textarea{width:100%;min-height:64px;background:var(--stand);border:1px solid var
       row.appendChild(inp);row.appendChild(save);row.appendChild(clr);
 
       var findRow=document.createElement('div');findRow.className='row find';
-      var findBtn=document.createElement('button');findBtn.type='button';findBtn.className='btn';findBtn.textContent='Find links with AI';
+      var findBtn=document.createElement('button');findBtn.type='button';findBtn.className='btn';findBtn.textContent='Find free playable links';
       var cands=document.createElement('div');cands.className='cands';
       findBtn.addEventListener('click',function(){
         findBtn.disabled=true;cands.textContent='Searching...';
-        ask({mode:'links',match:{title:it.title,series:it.series,venue:it.venue,start:it.start,dateLabel:it.dateLabel},
-             messages:[{role:'user',content:'Find official live or upcoming stream links for this match.'}]})
+        ask({mode:'links',match:{title:it.title,series:it.series,venue:it.venue,start:it.start,dateLabel:it.dateLabel}})
         .then(function(r){
           findBtn.disabled=false;cands.textContent='';
           if(!r.ok){cands.textContent=r.d.error||'Assistant failed';return;}
@@ -171,14 +159,16 @@ textarea{width:100%;min-height:64px;background:var(--stand);border:1px solid var
           (r.d.links||[]).forEach(function(l){
             var c=document.createElement('div');c.className='cand';
             var a=document.createElement('a');a.href=l.url;a.target='_blank';a.rel='noopener noreferrer';a.textContent=l.title;
-            var nt=document.createElement('span');nt.textContent=l.note;
+            var nt=document.createElement('span');nt.textContent=' · '+l.channel+' · Free and playable';
+            var evidence=document.createElement('a');evidence.href=l.evidenceUrl;evidence.target='_blank';evidence.rel='noopener noreferrer';evidence.textContent='Official source';
             var use=document.createElement('button');use.type='button';use.className='btn';use.textContent='Use this';
             use.addEventListener('click',function(){inp.value=l.url;send(l.url);});
-            var st=document.createElement('span');st.className='chk';st.textContent='Checking...';
-            c.appendChild(a);c.appendChild(nt);c.appendChild(st);c.appendChild(use);cands.appendChild(c);
-            checkLink(l.url,st);
+            c.appendChild(a);c.appendChild(nt);
+            if(l.note){var note=document.createElement('span');note.textContent=' · '+l.note;c.appendChild(note);}
+            c.appendChild(evidence);c.appendChild(use);cands.appendChild(c);
           });
-          if(!(r.d.links||[]).length){var e=document.createElement('div');e.textContent='No verified links found.';cands.appendChild(e);}
+          if(r.d.verificationFailures){var warning=document.createElement('div');warning.textContent='Could not verify '+r.d.verificationFailures+' candidate link(s). Try searching again.';cands.appendChild(warning);}
+          if(!(r.d.links||[]).length&&!r.d.verificationFailures){var e=document.createElement('div');e.textContent='No free, playable official YouTube links could be verified.';cands.appendChild(e);}
         }).catch(function(){findBtn.disabled=false;cands.textContent='Network error';});
       });
       findRow.appendChild(findBtn);
