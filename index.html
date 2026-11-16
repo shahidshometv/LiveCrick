@@ -22,9 +22,15 @@ body{min-height:100vh}
 button,select{font:inherit;color:inherit}
 :focus-visible{outline:2px solid var(--pitch);outline-offset:2px}
 
-header{display:flex;align-items:baseline;gap:14px;padding:16px clamp(16px,3vw,32px);border-bottom:1px solid var(--line)}
+header{display:flex;align-items:center;gap:16px;padding:12px clamp(16px,3vw,32px);border-bottom:1px solid var(--line)}
+header .brand{display:flex;align-items:baseline;gap:14px;flex:0 0 auto}
 header h1{font-family:var(--display);font-weight:700;font-size:2rem;letter-spacing:.01em}
 header p{color:var(--mute)}
+.channel-nav{display:flex;gap:6px;min-width:0;margin-left:auto;overflow-x:auto;scrollbar-width:thin}
+.channel-nav[hidden]{display:none}
+.channel-tab{flex:0 0 auto;background:none;border:1px solid var(--line);border-radius:999px;padding:4px 12px;cursor:pointer;color:var(--mute);white-space:nowrap}
+.channel-tab[aria-pressed="true"]{border-color:var(--pitch);color:var(--light);background:var(--stand)}
+@media(max-width:740px){header{flex-wrap:wrap}.channel-nav{width:100%;margin-left:0}.brand{width:100%}}
 
 main{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:24px;padding:24px clamp(16px,3vw,32px);max-width:1500px;margin:0 auto}
 @media(max-width:960px){main{grid-template-columns:1fr}}
@@ -65,8 +71,7 @@ ul{list-style:none;padding:0;display:flex;flex-direction:column;gap:8px}
 .badge{font-weight:600;color:var(--light)}
 .badge.live{color:var(--ball)}
 .empty{color:var(--mute);padding:16px 0}
-.channels{margin-top:24px;padding-top:16px;border-top:1px solid var(--line)}
-.channel-filter{width:100%;margin-bottom:10px}
+.channels{margin:0 0 24px;padding:0 0 16px;border-bottom:1px solid var(--line)}
 @media(prefers-reduced-motion:no-preference){.badge.live::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--ball);margin-right:6px;animation:p 1.6s ease-in-out infinite}}
 @media(prefers-reduced-motion:reduce){.badge.live::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--ball);margin-right:6px}}
 @keyframes p{50%{opacity:.35}}
@@ -74,8 +79,11 @@ ul{list-style:none;padding:0;display:flex;flex-direction:column;gap:8px}
 </head>
 <body>
 <header>
-  <h1 id="site">Boundary</h1>
-  <p>Cricket video player</p>
+  <div class="brand">
+    <h1 id="site">Boundary</h1>
+    <p>Cricket video player</p>
+  </div>
+  <nav id="channelCategories" class="channel-nav" aria-label="Channel categories" hidden></nav>
 </header>
 
 <main>
@@ -99,6 +107,10 @@ ul{list-style:none;padding:0;display:flex;flex-direction:column;gap:8px}
   </section>
 
   <aside aria-label="Matches">
+    <section class="channels" aria-label="Custom channels">
+      <h3>Channels</h3>
+      <ul id="channelList"></ul>
+    </section>
     <h3>Matches</h3>
     <div class="tabs" role="group" aria-label="Filter matches">
       <button class="tab" type="button" data-f="all" aria-pressed="true">All</button>
@@ -107,13 +119,6 @@ ul{list-style:none;padding:0;display:flex;flex-direction:column;gap:8px}
       <button class="tab" type="button" data-f="finished" aria-pressed="false">Finished</button>
     </div>
     <ul id="list"></ul>
-    <section class="channels" aria-label="Custom channels">
-      <h3>Channels</h3>
-      <select id="channelFilter" class="channel-filter" aria-label="Filter channels by category">
-        <option value="all">All categories</option>
-      </select>
-      <ul id="channelList"></ul>
-    </section>
   </aside>
 </main>
 
@@ -123,7 +128,7 @@ ul{list-style:none;padding:0;display:flex;flex-direction:column;gap:8px}
 (function(){
   var B=window.Boundary;
   var video=document.getElementById('video'), frame=document.getElementById('frame'), list=document.getElementById('list');
-  var channelList=document.getElementById('channelList'), channelFilter=document.getElementById('channelFilter');
+  var channelList=document.getElementById('channelList'), categoryNav=document.getElementById('channelCategories');
   var overlay=document.getElementById('overlay'), ovT=document.getElementById('ovT'), ovP=document.getElementById('ovP'), ovA=document.getElementById('ovA');
   var nowT=document.getElementById('nowT'), nowS=document.getElementById('nowS');
   var quality=document.getElementById('quality');
@@ -183,12 +188,20 @@ ul{list-style:none;padding:0;display:flex;flex-direction:column;gap:8px}
   function renderChannels(){
     var categories=Array.from(new Set(state.channels.map(function(channel){return channel.category;}))).sort();
     if(state.channelFilter!=='all'&&categories.indexOf(state.channelFilter)===-1)state.channelFilter='all';
-    channelFilter.textContent='';
-    var allOption=document.createElement('option');allOption.value='all';allOption.textContent='All categories';channelFilter.appendChild(allOption);
+    categoryNav.textContent='';
+    categoryNav.hidden=!categories.length;
+    var allButton=document.createElement('button');
+    allButton.type='button';allButton.className='channel-tab';allButton.textContent='All';
+    allButton.setAttribute('aria-pressed',state.channelFilter==='all'?'true':'false');
+    allButton.addEventListener('click',function(){state.channelFilter='all';renderChannels();});
+    categoryNav.appendChild(allButton);
     categories.forEach(function(category){
-      var option=document.createElement('option');option.value=category;option.textContent=category;channelFilter.appendChild(option);
+      var button=document.createElement('button');
+      button.type='button';button.className='channel-tab';button.textContent=category;
+      button.setAttribute('aria-pressed',state.channelFilter===category?'true':'false');
+      button.addEventListener('click',function(){state.channelFilter=category;renderChannels();});
+      categoryNav.appendChild(button);
     });
-    channelFilter.value=state.channelFilter;
     channelList.textContent='';
     var channels=state.channels.filter(function(channel){return state.channelFilter==='all'||channel.category===state.channelFilter;})
       .sort(function(a,b){return a.name.localeCompare(b.name);});
@@ -210,8 +223,6 @@ ul{list-style:none;padding:0;display:flex;flex-direction:column;gap:8px}
       li.appendChild(button);channelList.appendChild(li);
     });
   }
-
-  channelFilter.addEventListener('change',function(){state.channelFilter=channelFilter.value;renderChannels();});
 
   function resetPlayers(){
     if(state.hls){state.hls.destroy();state.hls=null;}
