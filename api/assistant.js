@@ -4,7 +4,7 @@
 const crypto = require('crypto');
 
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
-const DEFAULT_MODEL = 'llama-3.3-70b-versatile';
+const DEFAULT_MODEL = 'openai/gpt-oss-120b';
 const MAX_MESSAGES = 20;
 const MAX_CHARS = 4000;
 
@@ -83,7 +83,7 @@ module.exports = async function handler(req, res) {
     model: process.env.GROQ_MODEL || DEFAULT_MODEL,
     messages: [{ role: 'system', content: system }].concat(msgs),
     temperature: 0.2,
-    max_tokens: 700
+    max_tokens: 2000
   };
 
   try {
