@@ -108,6 +108,13 @@ function same(a, b) {
   return x.length === y.length && crypto.timingSafeEqual(x, y);
 }
 
+function sourceUrl(value) {
+  let url;
+  try { url = new URL(value); } catch (e) { return null; }
+  if (!['http:', 'https:', 'rtsp:'].includes(url.protocol) || !url.hostname || url.username || url.password || value.length > 500) return null;
+  return url;
+}
+
 module.exports = async function handler(req, res) {
   const db = backend();
 
@@ -142,12 +149,8 @@ module.exports = async function handler(req, res) {
     if (!/^[\w.-]{1,80}$/.test(id)) { res.status(400).json({ error: 'Bad channel id' }); return; }
     if (!name || name.length > 100) { res.status(400).json({ error: 'Channel name is required and must be under 100 characters' }); return; }
     if (!category || category.length > 40) { res.status(400).json({ error: 'Category is required and must be under 40 characters' }); return; }
-    let channelUrl;
-    try { channelUrl = new URL(link); } catch (e) { res.status(400).json({ error: 'Enter a valid channel URL' }); return; }
-    if (!['http:', 'https:', 'rtsp:'].includes(channelUrl.protocol) || !channelUrl.hostname || channelUrl.username || channelUrl.password || link.length > 500) {
-      res.status(400).json({ error: 'Channel URL must use HTTP, HTTPS, or RTSP, have no embedded credentials, and be under 500 characters' });
-      return;
-    }
+    const channelUrl = sourceUrl(link);
+    if (!channelUrl) { res.status(400).json({ error: 'Channel URL must use HTTP, HTTPS, or RTSP, have no embedded credentials, and be under 500 characters' }); return; }
     try {
       const channels = await db.channelsAll();
       if (!input.id && channels.length >= 500) { res.status(400).json({ error: 'Too many channels. Remove some first.' }); return; }
@@ -174,16 +177,16 @@ module.exports = async function handler(req, res) {
   const id = String(body.id || '');
   const link = String(body.url || '').trim();
   if (!/^[\w.-]{1,80}$/.test(id)) { res.status(400).json({ error: 'Bad match id' }); return; }
+  let matchUrl = null;
   if (link) {
-    let u;
-    try { u = new URL(link); } catch (e) { res.status(400).json({ error: 'That is not a valid link' }); return; }
-    if (u.protocol !== 'https:' || link.length > 500) { res.status(400).json({ error: 'Link must start with https:// and be under 500 characters' }); return; }
+    matchUrl = sourceUrl(link);
+    if (!matchUrl) { res.status(400).json({ error: 'Link must use HTTP, HTTPS, or RTSP, contain no embedded credentials, and be under 500 characters' }); return; }
   }
   try {
     if (link) {
       const all = await db.all();
       if (!(id in all) && Object.keys(all).length >= 500) { res.status(400).json({ error: 'Too many saved links. Clear some first.' }); return; }
-      await db.set(id, link);
+      await db.set(id, matchUrl.href);
     } else { await db.del(id); }
     res.status(200).json({ ok: true });
   } catch (e) {

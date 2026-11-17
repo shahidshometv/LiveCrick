@@ -69,7 +69,7 @@ textarea{width:100%;min-height:64px;background:var(--stand);border:1px solid var
 
   <section id="panel" class="hidden">
     <h2>Embed links</h2>
-    <p class="hint">Paste a link for any match and press Save. YouTube links (watch, live or youtu.be), direct .m3u8 / .mp4 links and iframe-friendly https pages all work. The player shows it straight away. Only add streams you have the right to show.</p>
+    <p class="hint">Paste a URL for any match and press Save. HTTPS YouTube, HLS, MP4, WebM, and iframe-friendly pages can play where supported. HTTP and RTSP URLs are saved as external-only; RTSP needs an HLS/WebRTC relay for in-page playback. Do not include credentials in URLs.</p>
     <div class="tools"><input id="q" type="search" placeholder="Filter matches" aria-label="Filter matches"></div>
     <ul id="list"></ul>
 
@@ -84,7 +84,7 @@ textarea{width:100%;min-height:64px;background:var(--stand);border:1px solid var
         </select>
       </div>
       <input id="customCategory" class="hidden" type="text" maxlength="40" placeholder="Custom category" aria-label="Custom category" style="margin-top:8px">
-      <input id="channelUrl" type="url" maxlength="500" placeholder="https://, http://, or rtsp://..." aria-label="Channel stream or player URL" style="margin-top:8px">
+      <input id="channelUrl" type="text" inputmode="url" maxlength="500" placeholder="https://, http://, or rtsp://..." aria-label="Channel stream or player URL" style="margin-top:8px">
       <div class="row" style="margin-top:8px">
         <button class="btn pri" id="saveChannel" type="button">Add channel</button>
         <button class="btn hidden" id="cancelChannelEdit" type="button">Cancel edit</button>
@@ -126,6 +126,13 @@ textarea{width:100%;min-height:64px;background:var(--stand);border:1px solid var
   function ask(body){
     return fetch('/api/assistant',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+pw},body:JSON.stringify(body)})
       .then(function(r){return r.json().catch(function(){return {};}).then(function(d){return {ok:r.ok,d:d};});});
+  }
+  function validSourceUrl(raw){
+    if(!raw||raw.length>500)return false;
+    try{
+      var u=new URL(raw);
+      return ['http:','https:','rtsp:'].indexOf(u.protocol)>-1&&!!u.hostname&&!u.username&&!u.password;
+    }catch(e){return false;}
   }
   function unlock(){
     loginEl.classList.add('hidden');panel.classList.remove('hidden');
@@ -189,11 +196,10 @@ textarea{width:100%;min-height:64px;background:var(--stand);border:1px solid var
   cancelChannelEdit.addEventListener('click',function(){resetChannelForm();channelMsg.textContent='';});
   saveChannel.addEventListener('click',function(){
     var name=channelName.value.trim(), category=channelCategory.value==='__custom__'?customCategory.value.trim():channelCategory.value;
-    var url=channelUrl.value.trim(), parsed;
-    try{parsed=new URL(url);}catch(e){parsed=null;}
+    var url=channelUrl.value.trim();
     if(!name||name.length>100){channelMsg.className='msg err';channelMsg.textContent='Enter a channel name (up to 100 characters).';return;}
     if(!category||category.length>40){channelMsg.className='msg err';channelMsg.textContent='Enter a category (up to 40 characters).';return;}
-    if(!parsed||['http:','https:','rtsp:'].indexOf(parsed.protocol)===-1||!parsed.hostname||parsed.username||parsed.password||url.length>500){channelMsg.className='msg err';channelMsg.textContent='Enter an HTTP, HTTPS, or RTSP URL with no embedded credentials, under 500 characters.';return;}
+    if(!validSourceUrl(url)){channelMsg.className='msg err';channelMsg.textContent='Enter an HTTP, HTTPS, or RTSP URL with no embedded credentials, under 500 characters.';return;}
     saveChannel.disabled=true;channelMsg.className='msg';channelMsg.textContent='Saving...';
     call({action:'saveChannel',channel:{id:editingChannelId||undefined,name:name,category:category,url:url}}).then(function(r){
       saveChannel.disabled=false;
@@ -213,7 +219,7 @@ textarea{width:100%;min-height:64px;background:var(--stand);border:1px solid var
       var m=document.createElement('div');m.className='m';
       m.textContent=[it._s.charAt(0).toUpperCase()+it._s.slice(1),B.when(it),it.series,it.venue].filter(Boolean).join(' · ');
       var row=document.createElement('div');row.className='row';
-      var inp=document.createElement('input');inp.type='url';inp.placeholder='https://www.youtube.com/watch?v=...';inp.value=it.embed||'';
+      var inp=document.createElement('input');inp.type='text';inp.inputMode='url';inp.placeholder='https://, http://, or rtsp://...';inp.value=it.embed||'';
       inp.setAttribute('aria-label','Embed link for '+it.title);
       var save=document.createElement('button');save.type='button';save.className='btn pri';save.textContent='Save';
       var clr=document.createElement('button');clr.type='button';clr.className='btn';clr.textContent='Clear';
@@ -221,13 +227,17 @@ textarea{width:100%;min-height:64px;background:var(--stand);border:1px solid var
       function send(url){
         msg.className='msg';msg.textContent='Saving...';
         call({id:it.id,url:url}).then(function(r){
-          if(r.ok){it.embed=url;inp.value=url;msg.className='msg ok';msg.textContent=url?'Saved. The site will use this link within a few seconds.':'Cleared.';}
+          if(r.ok){
+            var isHttps=false;
+            try{isHttps=new URL(url).protocol==='https:';}catch(e){}
+            it.embed=url;inp.value=url;msg.className='msg ok';msg.textContent=!url?'Cleared.':isHttps?'Saved. The site will try to play this link.':'Saved. This protocol opens externally; browser playback is not supported.';
+          }
           else{msg.className='msg err';msg.textContent=r.d.error||'Could not save';if(r.d.error==='Wrong password'){try{sessionStorage.removeItem('boundary:pw');}catch(e){}}}
         }).catch(function(){msg.className='msg err';msg.textContent='Network error';});
       }
       save.addEventListener('click',function(){
         var v=inp.value.trim();
-        if(v&&!B.embedOf(v)){msg.className='msg err';msg.textContent='Enter a valid link starting with https://';return;}
+        if(v&&!validSourceUrl(v)){msg.className='msg err';msg.textContent='Enter an HTTP, HTTPS, or RTSP link with no embedded credentials, under 500 characters.';return;}
         send(v);
       });
       clr.addEventListener('click',function(){send('');});

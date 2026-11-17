@@ -175,7 +175,12 @@ ul{list-style:none;padding:0;display:flex;flex-direction:column;gap:8px}
       var s=document.createElement('span');s.className='badge '+it._s;s.textContent=LABEL[it._s];
       var w=document.createElement('span');w.textContent=when(it);
       m.appendChild(s);m.appendChild(w);
-      if(it.embed||it.url){var p=document.createElement('span');p.textContent='▶ Play here';m.appendChild(p);}
+      if(it.embed||it.url){
+        var p=document.createElement('span'),protocol='';
+        try{protocol=new URL(it.embed||it.url).protocol;}catch(e){}
+        p.textContent=protocol==='http:'||protocol==='rtsp:'?'↗ External only':'▶ Play here';
+        m.appendChild(p);
+      }
       var v=document.createElement('div');v.className='m';v.textContent=[it.series,it.venue].filter(Boolean).join(' · ');
       b.appendChild(t);b.appendChild(m);b.appendChild(v);
       var sc=scoreText(it);
@@ -217,7 +222,9 @@ ul{list-style:none;padding:0;display:flex;flex-direction:column;gap:8px}
       var title=document.createElement('div');title.className='t';title.textContent=channel.name;
       var meta=document.createElement('div');meta.className='m';
       var category=document.createElement('span');category.className='badge';category.textContent=channel.category;
-      var playLabel=document.createElement('span');playLabel.textContent='▶ Play channel';
+      var playLabel=document.createElement('span'),protocol='';
+      try{protocol=new URL(channel.url).protocol;}catch(e){}
+      playLabel.textContent=protocol==='http:'||protocol==='rtsp:'?'↗ External only':'▶ Preview channel';
       meta.appendChild(category);meta.appendChild(playLabel);button.appendChild(title);button.appendChild(meta);
       button.addEventListener('click',function(){playChannel(channel);});
       li.appendChild(button);channelList.appendChild(li);
@@ -239,7 +246,17 @@ ul{list-style:none;padding:0;display:flex;flex-direction:column;gap:8px}
     nowT.textContent=it.title;
     nowS.textContent=nowLine(it);
     render();renderChannels();resetPlayers();
-    var em=B.embedOf(it.embed||it.url);
+    var source=it.embed||it.url||'', sourceProtocol='';
+    try{sourceProtocol=new URL(source).protocol;}catch(e){}
+    if(sourceProtocol==='rtsp:'){
+      message('RTSP source','Browsers cannot play RTSP directly. Add an HLS or WebRTC relay URL to preview this source here.',{name:it.title,url:source},'Open RTSP source');
+      return;
+    }
+    if(sourceProtocol==='http:'){
+      message('HTTP source','This site uses HTTPS, so browsers may block insecure HTTP playback. Open the source in a new tab or use an HTTPS stream URL.',{name:it.title,url:source},'Open HTTP source');
+      return;
+    }
+    var em=B.embedOf(source);
     if(em){
       hideMessage();
       if(em.kind==='iframe'){video.classList.add('hide');frame.src=em.src;frame.classList.add('show');}
